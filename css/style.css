@@ -1,0 +1,45 @@
+:root {
+  --azul: #1f4e79;
+}
+
+body {
+  background: #f4f6f8;
+}
+
+.navbar-brand {
+  font-weight: 600;
+}
+
+.vista {
+  display: none;
+}
+
+.vista.activa {
+  display: block;
+}
+
+.card-stat {
+  border: none;
+  border-radius: 10px;
+}
+
+table.table {
+  background: #fff;
+}
+
+.badge-estado-pendiente { background: #e0a800; }
+.badge-estado-entregado { background: #0d6efd; }
+.badge-estado-aprobado { background: #198754; }
+.badge-estado-rechazado { background: #dc3545; }
+
+#login-view {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-inline {
+  width: 1rem;
+  height: 1rem;
+}

@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// Copiar y pegar este contenido en:
+// Firebase Console -> Firestore Database -> Reglas
+//
+// Lógica: solo usuarios logueados (Auth) pueden leer/escribir datos,
+// y solo un usuario con rol "admin" (definido en /usuarios/{uid}) puede
+// gestionar la colección de usuarios.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function estaLogueado() {
+      return request.auth != null;
+    }
+
+    function esAdmin() {
+      return estaLogueado() &&
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == "admin";
+    }
+
+    match /alumnos/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    match /practicas/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    match /informes/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    match /faltas/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    match /asistencias/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    match /notificaciones_log/{docId} {
+      allow read, write: if estaLogueado();
+    }
+
+    // Los perfiles de usuario (nombre/rol) solo los administra un admin,
+    // pero cualquier usuario logueado puede leer su propio perfil para
+    // saber su rol al entrar.
+    match /usuarios/{uid} {
+      allow read: if estaLogueado();
+      allow write: if esAdmin();
+    }
+  }
+}

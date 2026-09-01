@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prácticas Profesionalizantes</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  /* Color de referencia por tipo de práctica, para distinguirlas de un
+     vistazo en las tablas y en Estadísticas. */
+  .badge-tipo-interna { background-color: #6c757d; color: #fff; }
+  .badge-tipo-externa { background-color: #0dcaf0; color: #000; }
+  .badge-tipo-interescolar { background-color: #8e44ad; color: #fff; }
+  .leyenda-tipos .badge { margin-right: .5rem; }
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login-view">
+  <div class="card p-4 shadow-sm" style="width: 340px;">
+    <h4 class="text-center mb-3">Prácticas Profesionalizantes</h4>
+    <div id="login-error" class="alert alert-danger d-none"></div>
+    <form id="form-login">
+      <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input type="email" id="login-email" class="form-control" required autofocus>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Contraseña</label>
+        <input type="password" id="login-password" class="form-control" required>
+      </div>
+      <button class="btn btn-primary w-100" type="submit">Ingresar</button>
+    </form>
+    <p class="text-muted small mt-3 mb-0">Las cuentas las crea el administrador desde la consola de Firebase (ver README).</p>
+  </div>
+</div>
+
+<!-- ===================== APP (visible tras login) ===================== -->
+<div id="app-shell" class="d-none">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <span class="navbar-brand">PP</span>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="nav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item"><a class="nav-link" href="#" data-view="dashboard">Horas / Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="estadisticas">Estadísticas</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Fechas de práctica</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="informes">Informes PP</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="drive">Buscar en Drive</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="faltas">Faltas</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="asistencia">Asistencia</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="notificaciones">Notificaciones</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="alumnos">Alumnos</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar planilla</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="usuarios">Usuarios</a></li>
+        </ul>
+        <span class="navbar-text text-light me-3" id="usuario-actual"></span>
+        <button class="btn btn-outline-light btn-sm" id="btn-logout">Salir</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container py-4">
+    <div id="alertas"></div>
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section class="vista" id="vista-dashboard">
+      <h3>Panel general</h3>
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="stat-horas">0</div>
+            <div class="text-muted">Horas realizadas</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="stat-alumnos">0</div>
+            <div class="text-muted">Alumnos</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="stat-practicas">0</div>
+            <div class="text-muted">Prácticas cargadas</div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-6">
+          <h5>Horas por sector</h5>
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Sector</th><th>Horas</th></tr></thead>
+            <tbody id="tabla-horas-sector"></tbody>
+          </table>
+        </div>
+        <div class="col-md-6">
+          <h5>Próximas prácticas</h5>
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Fecha</th><th>Alumno</th><th>Lugar</th></tr></thead>
+            <tbody id="tabla-proximas"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- ESTADISTICAS ---------- -->
+    <section class="vista" id="vista-estadisticas">
+      <h3>Estadísticas de cumplimiento</h3>
+      <p class="text-muted">Porcentaje de práctica realizada por alumno según un objetivo de horas, y desglose por prácticas internas / externas.</p>
+
+      <div class="row g-2 align-items-end mb-4 card p-3 shadow-sm" style="max-width:420px">
+        <div class="col">
+          <label class="form-label mb-0">Horas objetivo por alumno</label>
+          <input type="number" min="0" step="1" class="form-control" id="estad-objetivo" value="200">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-outline-secondary" id="btn-estad-actualizar">Actualizar</button>
+        </div>
+      </div>
+
+      <div class="row mb-2">
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-total-alumnos">0</div>
+            <div class="text-muted">Alumnos</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-promedio">0%</div>
+            <div class="text-muted">Cumplimiento promedio</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-horas-realizadas">0</div>
+            <div class="text-muted">Horas realizadas</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-horas-pendientes">0</div>
+            <div class="text-muted">Horas pendientes (programadas)</div>
+          </div>
+        </div>
+      </div>
+      <div class="row mb-4">
+        <div class="col-md-3 offset-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-horas-internas">0</div>
+            <div class="text-muted"><span class="badge badge-tipo-interna">Interna</span> realizadas</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-horas-externas">0</div>
+            <div class="text-muted"><span class="badge badge-tipo-externa">Externa</span> realizadas</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card card-stat text-center p-3 shadow-sm">
+            <div class="fs-4 fw-bold" id="estad-horas-interescolar">0</div>
+            <div class="text-muted"><span class="badge badge-tipo-interescolar">Interescolar</span> realizadas</div>
+          </div>
+        </div>
+      </div>
+
+      <table class="table table-bordered align-middle">
+        <thead>
+          <tr>
+            <th>Alumno</th><th>Legajo</th><th>Horas realizadas</th><th>Horas pendientes</th>
+            <th>Internas</th><th>Externas</th><th>Interescolares</th><th>Cant. prácticas</th>
+            <th style="min-width:160px">% cumplido</th><th>Horas faltantes</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-estadisticas"></tbody>
+      </table>
+    </section>
+
+    <!-- ---------- ALUMNOS ---------- -->
+    <section class="vista" id="vista-alumnos">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Alumnos</h3>
+        <button class="btn btn-primary btn-sm" id="btn-nuevo-alumno">+ Nuevo alumno</button>
+      </div>
+      <div class="row g-2 mb-3" style="max-width:500px">
+        <div class="col-md-7"><input class="form-control" id="alumno-filtro-texto" placeholder="Buscar por nombre, legajo o sector"></div>
+        <div class="col-md-5"><input class="form-control" id="alumno-filtro-curso" placeholder="Filtrar por curso / división"></div>
+      </div>
+      <table class="table table-bordered">
+        <thead><tr><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector</th><th>Email</th><th></th></tr></thead>
+        <tbody id="tabla-alumnos"></tbody>
+      </table>
+    </section>
+
+    <!-- Modal alumno (ficha completa: datos + prácticas) -->
+    <div class="modal fade" id="modal-alumno" tabindex="-1">
+      <div class="modal-dialog modal-lg"><div class="modal-content">
+        <form id="form-alumno">
+          <div class="modal-header"><h5 class="modal-title" id="modal-alumno-titulo">Alumno</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <input type="hidden" id="alumno-id">
+            <div class="row">
+              <div class="col-md-4 mb-2"><label class="form-label">Legajo</label><input class="form-control" id="alumno-legajo" required></div>
+              <div class="col-md-4 mb-2"><label class="form-label">Nombre</label><input class="form-control" id="alumno-nombre" required></div>
+              <div class="col-md-4 mb-2"><label class="form-label">Apellido</label><input class="form-control" id="alumno-apellido" required></div>
+            </div>
+            <div class="row">
+              <div class="col-md-4 mb-2"><label class="form-label">Curso / división</label><input class="form-control" id="alumno-curso" placeholder="Ej: 5to Informática"></div>
+              <div class="col-md-4 mb-2"><label class="form-label">Email</label><input type="email" class="form-control" id="alumno-email"></div>
+              <div class="col-md-4 mb-2"><label class="form-label">Sector / carrera</label><input class="form-control" id="alumno-sector"></div>
+            </div>
+
+            <div id="alumno-practicas-wrap" class="d-none mt-3">
+              <hr>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">Prácticas de este alumno</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-alumno-nueva-practica">+ Agregar práctica</button>
+              </div>
+              <div class="table-responsive" style="max-height:260px; overflow-y:auto;">
+                <table class="table table-sm table-bordered mb-0">
+                  <thead><tr><th>Fecha</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Horas</th><th></th></tr></thead>
+                  <tbody id="tabla-alumno-practicas"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer d-flex justify-content-between">
+            <button type="button" class="btn btn-outline-danger d-none" id="btn-eliminar-alumno">Eliminar alumno</button>
+            <button class="btn btn-primary" type="submit">Guardar</button>
+          </div>
+        </form>
+      </div></div>
+    </div>
+
+    <!-- ---------- PRACTICAS (fechas) ---------- -->
+    <section class="vista" id="vista-practicas">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Fechas de práctica</h3>
+        <button class="btn btn-primary btn-sm" id="btn-nueva-practica">+ Nueva fecha</button>
+      </div>
+
+      <div class="row g-2 mb-3 card p-3 shadow-sm">
+        <div class="col-md-2"><input class="form-control" id="f-alumno" placeholder="Alumno / legajo"></div>
+        <div class="col-md-2"><input class="form-control" id="f-lugar" placeholder="Lugar"></div>
+        <div class="col-md-2"><input class="form-control" id="f-tutor" placeholder="Tutor"></div>
+        <div class="col-md-2"><input class="form-control" id="f-sector" placeholder="Sector"></div>
+        <div class="col-md-2"><input type="date" class="form-control" id="f-desde"></div>
+        <div class="col-md-2"><input type="date" class="form-control" id="f-hasta"></div>
+        <div class="col-12">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-filtrar-practicas">Buscar</button>
+          <button class="btn btn-link btn-sm" id="btn-limpiar-practicas">Limpiar</button>
+        </div>
+      </div>
+
+      <div class="leyenda-tipos mb-2">
+        <span class="badge badge-tipo-interna">Interna</span>
+        <span class="badge badge-tipo-externa">Externa</span>
+        <span class="badge badge-tipo-interescolar">Interescolar</span>
+      </div>
+
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
+            <th>Horario<br><small class="text-muted fw-normal">entrada - salida</small></th>
+            <th>Horas día</th><th>Horas día realizadas</th><th>Horas realizadas (alumno)</th><th>Horas totales (alumno)</th>
+            <th>Tutor</th><th>Contacto</th><th colspan="2"></th>
+          </tr>
+        </thead>
+        <tbody id="tabla-practicas"></tbody>
+      </table>
+    </section>
+
+    <div class="modal fade" id="modal-practica" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <form id="form-practica">
+          <div class="modal-header"><h5 class="modal-title">Fecha de práctica</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <input type="hidden" id="practica-id">
+            <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="practica-alumno" required></select></div>
+            <div class="mb-2"><label class="form-label">Lugar</label><input class="form-control" id="practica-lugar" required></div>
+            <div class="mb-2"><label class="form-label">Tipo de práctica</label>
+              <select class="form-select" id="practica-tipo">
+                <option value="interna">Interna</option>
+                <option value="externa">Externa</option>
+                <option value="interescolar">Interescolar</option>
+              </select>
+            </div>
+            <div class="mb-2"><label class="form-label">Sector</label><input class="form-control" id="practica-sector"></div>
+            <div class="mb-1"><label class="form-label">Fecha</label><input type="date" class="form-control" id="practica-fecha" required></div>
+            <div class="mb-2">
+              <label class="form-label mb-1">Horario</label>
+              <div class="row g-2">
+                <div class="col-6"><input type="time" class="form-control" id="practica-inicio" placeholder="Hora entrada"><div class="form-text">Hora entrada</div></div>
+                <div class="col-6"><input type="time" class="form-control" id="practica-fin" placeholder="Hora salida"><div class="form-text">Hora salida</div></div>
+              </div>
+            </div>
+            <div class="mb-2"><label class="form-label">Horas totales</label><input type="number" step="0.5" class="form-control" id="practica-horas" value="0"></div>
+            <div class="form-check mb-2">
+              <input type="checkbox" class="form-check-input" id="practica-realizada" checked>
+              <label class="form-check-label">Ya se realizó (suma a las horas cumplidas en Estadísticas)</label>
+            </div>
+            <div class="mb-2"><label class="form-label">Tutor responsable</label><input class="form-control" id="practica-tutor"></div>
+            <div class="mb-2"><label class="form-label">Email del tutor/docente (para copia en notificaciones)</label><input type="email" class="form-control" id="practica-tutor-email"></div>
+            <div class="mb-2"><label class="form-label">Contacto</label><input class="form-control" id="practica-contacto"></div>
+            <div class="mb-2"><label class="form-label">Notas</label><textarea class="form-control" id="practica-notas"></textarea></div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar</button></div>
+        </form>
+      </div></div>
+    </div>
+
+    <!-- ---------- INFORMES ---------- -->
+    <section class="vista" id="vista-informes">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Informes de PP presentados</h3>
+        <button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button>
+      </div>
+      <table class="table table-bordered">
+        <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Enlace</th></tr></thead>
+        <tbody id="tabla-informes"></tbody>
+      </table>
+    </section>
+
+    <div class="modal fade" id="modal-informe" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <form id="form-informe">
+          <div class="modal-header"><h5 class="modal-title">Informe PP</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="informe-alumno" required></select></div>
+            <div class="mb-2"><label class="form-label">Título</label><input class="form-control" id="informe-titulo" required></div>
+            <div class="mb-2"><label class="form-label">Fecha de presentación</label><input type="date" class="form-control" id="informe-fecha"></div>
+            <div class="mb-2"><label class="form-label">Estado</label>
+              <select class="form-select" id="informe-estado">
+                <option value="pendiente">Pendiente</option>
+                <option value="entregado">Entregado</option>
+                <option value="aprobado">Aprobado</option>
+                <option value="rechazado">Rechazado</option>
+              </select>
+            </div>
+            <div class="mb-2"><label class="form-label">Enlace a Drive (opcional)</label><input type="url" class="form-control" id="informe-enlace" placeholder="https://drive.google.com/..."></div>
+            <div class="mb-2"><label class="form-label">Observaciones</label><textarea class="form-control" id="informe-obs"></textarea></div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar</button></div>
+        </form>
+      </div></div>
+    </div>
+
+    <!-- ---------- DRIVE ---------- -->
+    <section class="vista" id="vista-drive">
+      <h3>Buscar archivos en Drive</h3>
+      <p class="text-muted">La primera vez vas a tener que iniciar sesión con Google y autorizar el acceso de solo lectura a Drive.</p>
+      <button class="btn btn-outline-primary btn-sm mb-3" id="btn-drive-login">Conectar con Google Drive</button>
+      <form id="form-drive-buscar" class="d-flex gap-2 mb-3" style="max-width:500px">
+        <input class="form-control" id="drive-query" placeholder="Nombre del archivo" required>
+        <button class="btn btn-primary" type="submit">Buscar</button>
+      </form>
+      <div id="drive-estado" class="text-muted mb-2"></div>
+      <table class="table table-bordered">
+        <thead><tr><th>Nombre</th><th>Tipo</th><th>Modificado</th><th></th></tr></thead>
+        <tbody id="tabla-drive"></tbody>
+      </table>
+    </section>
+
+    <!-- ---------- FALTAS ---------- -->
+    <section class="vista" id="vista-faltas">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Faltas por alumno</h3>
+        <button class="btn btn-primary btn-sm" id="btn-nueva-falta">+ Registrar falta</button>
+      </div>
+      <select class="form-select mb-3" style="max-width:300px" id="falta-filtro-alumno">
+        <option value="">Todos los alumnos</option>
+      </select>
+      <table class="table table-bordered">
+        <thead><tr><th>Fecha</th><th>Alumno</th><th>Justificada</th><th>Motivo</th></tr></thead>
+        <tbody id="tabla-faltas"></tbody>
+      </table>
+    </section>
+
+    <div class="modal fade" id="modal-falta" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <form id="form-falta">
+          <div class="modal-header"><h5 class="modal-title">Registrar falta</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="falta-alumno" required></select></div>
+            <div class="mb-2"><label class="form-label">Fecha</label><input type="date" class="form-control" id="falta-fecha" required></div>
+            <div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="falta-justificada"><label class="form-check-label">Justificada</label></div>
+            <div class="mb-2"><label class="form-label">Motivo</label><input class="form-control" id="falta-motivo"></div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar</button></div>
+        </form>
+      </div></div>
+    </div>
+
+    <!-- ---------- ASISTENCIA ---------- -->
+    <section class="vista" id="vista-asistencia">
+      <h3>Registro de asistencia</h3>
+      <form id="form-asistencia" class="row g-2 card p-3 shadow-sm mb-4">
+        <div class="col-md-3"><select class="form-select" id="asist-alumno" required></select></div>
+        <div class="col-md-2"><input type="date" class="form-control" id="asist-fecha" required></div>
+        <div class="col-md-2"><input class="form-control" id="asist-lugar" placeholder="Lugar"></div>
+        <div class="col-md-2">
+          <select class="form-select" id="asist-tipo">
+            <option value="interna">Interna</option>
+            <option value="externa">Externa</option>
+            <option value="interescolar">Interescolar</option>
+          </select>
+        </div>
+        <div class="col-md-1"><input type="time" class="form-control" id="asist-entrada" placeholder="Entrada"></div>
+        <div class="col-md-1"><input type="time" class="form-control" id="asist-salida" placeholder="Salida"></div>
+        <div class="col-md-1 form-check d-flex align-items-center">
+          <input type="checkbox" class="form-check-input me-2" id="asist-presente" checked>
+          <label class="form-check-label">Presente</label>
+        </div>
+        <div class="form-text">Si el alumno ya tiene una práctica cargada para esa fecha, el lugar y el tipo se completan solos.</div>
+        <div class="col-12"><input class="form-control" id="asist-obs" placeholder="Observaciones (opcional)"></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Guardar</button></div>
+      </form>
+      <select class="form-select mb-3" style="max-width:300px" id="asist-filtro-alumno">
+        <option value="">Todos los alumnos</option>
+      </select>
+      <table class="table table-bordered">
+        <thead><tr><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Presente</th><th>Entrada</th><th>Salida</th><th>Obs.</th></tr></thead>
+        <tbody id="tabla-asistencia"></tbody>
+      </table>
+    </section>
+
+    <!-- ---------- NOTIFICACIONES ---------- -->
+    <section class="vista" id="vista-notificaciones">
+      <h3>Notificaciones por mail</h3>
+      <p class="text-muted">Envía un recordatorio a los alumnos con prácticas próximas.</p>
+
+      <div id="notif-config-alerta" class="alert alert-warning d-none"></div>
+
+      <div class="d-flex gap-2 mb-3" style="max-width:300px">
+        <input type="number" class="form-control" id="notif-dias" value="3">
+        <button class="btn btn-outline-secondary" id="btn-notif-actualizar">Actualizar</button>
+      </div>
+      <table class="table table-bordered mb-3">
+        <thead><tr><th>Fecha</th><th>Alumno</th><th>Email</th><th>Lugar</th></tr></thead>
+        <tbody id="tabla-notif-proximas"></tbody>
+      </table>
+
+      <div class="card p-3 shadow-sm mb-3" style="max-width:640px">
+        <h6>Personalizar antes de enviar</h6>
+        <div class="mb-2">
+          <label class="form-label">Mensaje adicional (opcional)</label>
+          <textarea class="form-control" id="notif-mensaje" rows="3" placeholder="Texto extra que se agrega al mail, por ejemplo indicaciones especiales."></textarea>
+          <div class="form-text">Para que aparezca en el mail, la plantilla de EmailJS debe incluir la variable <code>{{mensaje_adicional}}</code>.</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Copia (CC) a docente/tutor (opcional)</label>
+          <input type="email" class="form-control" id="notif-cc" placeholder="docente@escuela.edu.ar">
+          <div class="form-text">Si lo dejás vacío, se usa el email de tutor cargado en cada práctica (si existe). Requiere configurar el campo "To CC" de la plantilla en EmailJS con <code>{{cc_email}}</code>.</div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label">Adjuntar acuerdo de práctica (PDF, opcional)</label>
+          <input type="file" class="form-control" id="notif-adjunto" accept="application/pdf">
+          <div class="form-text">Se envía igual a todos los destinatarios de esta tanda. Requiere que la plantilla tenga un adjunto de tipo "Variable Attachment" con parámetro <code>adjunto_acuerdo</code> (ver README). Los archivos grandes pueden superar el límite de tamaño de EmailJS.</div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btn-notif-enviar">Enviar recordatorios ahora</button>
+
+      <h5 class="mt-5">Historial de envíos</h5>
+      <table class="table table-bordered">
+        <thead><tr><th>Fecha envío</th><th>Alumno</th><th>Estado</th><th>Detalle</th></tr></thead>
+        <tbody id="tabla-notif-historial"></tbody>
+      </table>
+    </section>
+
+    <!-- ---------- USUARIOS ---------- -->
+    <section class="vista" id="vista-usuarios">
+      <h3>Usuarios del sistema (<span id="usuarios-count">0</span>/3)</h3>
+      <table class="table table-bordered mb-4">
+        <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th></tr></thead>
+        <tbody id="tabla-usuarios"></tbody>
+      </table>
+      <div class="alert alert-info">
+        Para crear una cuenta nueva: primero creála en
+        <strong>Firebase Console → Authentication → Add user</strong> (email + contraseña),
+        copiá el <strong>UID</strong> generado, y pegalo acá abajo para asignarle nombre y rol.
+      </div>
+      <form id="form-usuario" class="card p-4 shadow-sm" style="max-width:500px">
+        <div class="mb-2"><label class="form-label">UID (de Firebase Auth)</label><input class="form-control" id="usuario-uid" required></div>
+        <div class="mb-2"><label class="form-label">Nombre completo</label><input class="form-control" id="usuario-nombre" required></div>
+        <div class="mb-2"><label class="form-label">Email</label><input type="email" class="form-control" id="usuario-email" required></div>
+        <div class="mb-2"><label class="form-label">Rol</label>
+          <select class="form-select" id="usuario-rol">
+            <option value="tutor">Tutor</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </form>
+    </section>
+
+    <!-- ---------- IMPORTAR PLANILLA ---------- -->
+    <section class="vista" id="vista-importar">
+      <h3>Importar planilla de prácticas</h3>
+      <p class="text-muted">
+        Subí un Excel o CSV con una fila por práctica (alumno + lugar + fecha + horas + asistencia).
+        Si el legajo no existe todavía, se crea el alumno automáticamente con los datos de la fila.
+      </p>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-outline-secondary btn-sm" id="btn-importar-plantilla">Descargar plantilla (.xlsx)</button>
+      </div>
+
+      <div class="card p-3 shadow-sm mb-3" style="max-width:500px">
+        <label class="form-label">Archivo (.xlsx, .xls o .csv)</label>
+        <input type="file" class="form-control" id="importar-archivo" accept=".xlsx,.xls,.csv">
+      </div>
+
+      <div id="importar-resumen-preview" class="text-muted mb-2"></div>
+
+      <div class="table-responsive mb-3">
+        <table class="table table-bordered table-sm">
+          <thead>
+            <tr>
+              <th>Fila</th><th>Legajo</th><th>Alumno</th><th>Curso</th><th>Alta</th><th>Lugar</th>
+              <th>Tipo</th><th>Fecha</th><th>Horas</th><th>Estado práctica</th><th>Validación</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-importar-preview">
+            <tr><td colspan="11" class="text-muted">Subí un archivo para ver la vista previa.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <button class="btn btn-primary" id="btn-importar-confirmar" disabled>Confirmar importación</button>
+
+      <div class="alert alert-secondary mt-4">
+        <strong>Columnas que reconoce la plantilla</strong> (los nombres de encabezado no son sensibles a mayúsculas/acentos):
+        Legajo, Apellido, Nombre, Email, Curso / División, Sector / Carrera, Lugar de práctica, Tipo (interna/externa/interescolar),
+        Fecha (AAAA-MM-DD o DD/MM/AAAA), Hora inicio, Hora fin, Horas totales, Tutor responsable, Email del tutor,
+        Contacto, Presente (si/no), Estado (realizada/pendiente), Observaciones asistencia, Notas práctica.
+        Solo <strong>Legajo, Lugar de práctica y Fecha</strong> son obligatorios.
+        <hr class="my-2">
+        <strong>Horas realizadas vs. pendientes:</strong> si completás la columna <em>Estado</em> se usa ese valor;
+        si no, se mira <em>Presente</em> (sí = realizada, no = pendiente); si tampoco hay dato, se infiere por la
+        fecha (pasada o de hoy = realizada, futura = pendiente). Las horas "pendientes" no suman al cumplimiento
+        en Estadísticas hasta que se confirmen como realizadas.
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
