@@ -401,16 +401,19 @@
 
     <!-- ---------- DRIVE ---------- -->
     <section class="vista" id="vista-drive">
-      <h3>Buscar archivos en Drive</h3>
-      <p class="text-muted">La primera vez vas a tener que iniciar sesión con Google y autorizar el acceso de solo lectura a Drive.</p>
+      <h3>Informes en Drive</h3>
+      <p class="text-muted">La primera vez vas a tener que iniciar sesión con Google y autorizar el acceso de solo lectura a Drive. La búsqueda recorre automáticamente todas las subcarpetas (Séptimo A, Séptimo B y la carpeta de cada alumno).</p>
       <button class="btn btn-outline-primary btn-sm mb-3" id="btn-drive-login">Conectar con Google Drive</button>
-      <form id="form-drive-buscar" class="d-flex gap-2 mb-3" style="max-width:500px">
-        <input class="form-control" id="drive-query" placeholder="Nombre del archivo" required>
-        <button class="btn btn-primary" type="submit">Buscar</button>
-      </form>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <form id="form-drive-buscar" class="d-flex gap-2" style="max-width:500px">
+          <input class="form-control" id="drive-query" placeholder="Nombre de archivo, curso o alumno" required>
+          <button class="btn btn-primary" type="submit">Buscar</button>
+        </form>
+        <button class="btn btn-outline-secondary" id="btn-drive-cargar-todos" type="button">Cargar todos los informes</button>
+      </div>
       <div id="drive-estado" class="text-muted mb-2"></div>
       <table class="table table-bordered">
-        <thead><tr><th>Nombre</th><th>Tipo</th><th>Modificado</th><th></th></tr></thead>
+        <thead><tr><th>Curso</th><th>Alumno</th><th>Archivo</th><th>Tipo</th><th>Modificado</th><th></th></tr></thead>
         <tbody id="tabla-drive"></tbody>
       </table>
     </section>

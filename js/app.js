@@ -1,5 +1,5 @@
 import { firebaseConfig, emailjsConfig } from "./firebase-config.js";
-import { initApp as initDrive, buscarEnDrive } from "./drive.js";
+import { initApp as initDrive, buscarEnDrive, cargarTodosLosInformes } from "./drive.js";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -804,20 +804,53 @@ document.getElementById("form-informe").addEventListener("submit", async (e) => 
 });
 
 // ------------------------------------------------------------------ DRIVE
+// Nombre corto y prolijo para el tipo de archivo, en vez del mimeType crudo.
+function tipoArchivoLegible(mimeType) {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "Word (.docx)";
+  if (mimeType === "application/msword") return "Word (.doc)";
+  return mimeType;
+}
+
+function renderTablaDrive(archivos) {
+  document.getElementById("tabla-drive").innerHTML = archivos.map(f => `
+    <tr>
+      <td>${f.curso || "-"}</td>
+      <td>${f.alumno || "-"}</td>
+      <td>${f.nombre}</td>
+      <td>${tipoArchivoLegible(f.mimeType)}</td>
+      <td>${new Date(f.modifiedTime).toLocaleString()}</td>
+      <td><a href="${f.webViewLink}" target="_blank" class="btn btn-sm btn-outline-secondary">Abrir</a></td>
+    </tr>`).join("") || `<tr><td colspan="6" class="text-muted">Sin resultados.</td></tr>`;
+}
+
 document.getElementById("btn-drive-login").addEventListener("click", () => initDrive());
+
 document.getElementById("form-drive-buscar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const query_ = document.getElementById("drive-query").value.trim();
   const estado = document.getElementById("drive-estado");
-  estado.textContent = "Buscando...";
+  estado.textContent = "Buscando en todas las carpetas (Séptimo A, Séptimo B y cada alumno)...";
   try {
     const archivos = await buscarEnDrive(query_);
-    estado.textContent = archivos.length ? "" : "Sin resultados.";
-    document.getElementById("tabla-drive").innerHTML = archivos.map(f => `
-      <tr>
-        <td>${f.name}</td><td>${f.mimeType}</td><td>${new Date(f.modifiedTime).toLocaleString()}</td>
-        <td><a href="${f.webViewLink}" target="_blank" class="btn btn-sm btn-outline-secondary">Abrir</a></td>
-      </tr>`).join("");
+    estado.textContent = archivos.length ? `${archivos.length} informe(s) encontrado(s).` : "Sin resultados.";
+    renderTablaDrive(archivos);
+  } catch (err) {
+    estado.textContent = "Necesitás conectar con Google Drive primero (botón de arriba).";
+  }
+});
+
+// Trae absolutamente todos los informes (recorre Informes/SéptimoA/<alumno>/...
+// e Informes/SéptimoB/<alumno>/... de forma recursiva), sin necesidad de
+// escribir ningún nombre para buscar.
+document.getElementById("btn-drive-cargar-todos").addEventListener("click", async () => {
+  const estado = document.getElementById("drive-estado");
+  document.getElementById("drive-query").value = "";
+  estado.textContent = "Recorriendo carpetas de Drive, puede tardar unos segundos...";
+  try {
+    const archivos = await cargarTodosLosInformes({ forzarRefresco: true });
+    estado.textContent = `${archivos.length} informe(s) encontrado(s) en total.`;
+    renderTablaDrive(archivos);
   } catch (err) {
     estado.textContent = "Necesitás conectar con Google Drive primero (botón de arriba).";
   }
