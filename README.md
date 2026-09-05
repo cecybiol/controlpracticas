@@ -137,9 +137,9 @@ firestore.rules        Reglas de seguridad para pegar en Firebase Console
 
 1. **Export a Excel/PDF** de horas por alumno y por sector (útil para
    entregar constancias o reportes a la institución).
-2. **Notificaciones automáticas programadas** (hoy el envío es manual con un
-   botón): se podría sumar Google Apps Script como disparador diario gratuito
-   que llame a EmailJS o a un webhook, sin necesitar un servidor propio.
+   2. **Notificaciones automáticas programadas** (hoy el envío es manual con un
+      botón): se podría sumar Google Apps Script como disparador diario gratuito
+      que llame a EmailJS o a un webhook, sin necesitar un servidor propio.
 3. **Registro de asistencia con QR o geolocalización** para que el alumno
    marque entrada/salida desde su celular en el lugar de práctica.
 4. **Historial de cambios** (quién editó qué y cuándo) en Firestore, útil si

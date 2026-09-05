@@ -15,8 +15,8 @@ export const firebaseConfig = {
 // Client ID de OAuth (tipo "Aplicación web") creado en Google Cloud Console.
 // Ver README para el paso a paso.
 export const googleDriveConfig = {
-  clientId: "TU_CLIENT_ID.apps.googleusercontent.com",
-  folderId: "ID_DE_LA_CARPETA_DE_DRIVE",
+  clientId: "442129958771-v0qdgej8a0cg1hoja1v4rtmghe1bthp5.apps.googleusercontent.com",
+  folderId: "14T5iUDP6RPLFS1hnvtma-vPiKkCEvE3d",
 };
 
 // --- EmailJS (envío de notificaciones) ---

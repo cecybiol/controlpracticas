@@ -175,6 +175,14 @@
       <table class="table table-bordered align-middle">
         <thead>
           <tr>
+            <th colspan="10">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <input class="form-control" style="max-width:320px" id="estad-buscar-alumno" placeholder="Buscar alumno por nombre o legajo...">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-estad-exportar">Exportar a Excel</button>
+              </div>
+            </th>
+          </tr>
+          <tr>
             <th>Alumno</th><th>Legajo</th><th>Horas realizadas</th><th>Horas pendientes</th>
             <th>Internas</th><th>Externas</th><th>Interescolares</th><th>Cant. prácticas</th>
             <th style="min-width:160px">% cumplido</th><th>Horas faltantes</th>
@@ -194,8 +202,12 @@
         <div class="col-md-7"><input class="form-control" id="alumno-filtro-texto" placeholder="Buscar por nombre, legajo o sector"></div>
         <div class="col-md-5"><input class="form-control" id="alumno-filtro-curso" placeholder="Filtrar por curso / división"></div>
       </div>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-alumnos-masivo">Eliminar seleccionados</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-alumnos">Exportar a Excel</button>
+      </div>
       <table class="table table-bordered">
-        <thead><tr><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector</th><th>Email</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector</th><th>Email</th><th></th></tr></thead>
         <tbody id="tabla-alumnos"></tbody>
       </table>
     </section>
@@ -260,18 +272,28 @@
         </div>
       </div>
 
-      <div class="leyenda-tipos mb-2">
-        <span class="badge badge-tipo-interna">Interna</span>
-        <span class="badge badge-tipo-externa">Externa</span>
-        <span class="badge badge-tipo-interescolar">Interescolar</span>
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div class="leyenda-tipos">
+          <span class="badge badge-tipo-interna">Interna</span>
+          <span class="badge badge-tipo-externa">Externa</span>
+          <span class="badge badge-tipo-interescolar">Interescolar</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-practicas-masivo">Eliminar seleccionadas</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-practicas">Exportar a Excel</button>
+        </div>
       </div>
 
       <table class="table table-bordered">
         <thead>
           <tr>
-            <th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
+            <th><input type="checkbox" id="chk-todas-practicas"></th>
+            <th>Fecha<br><small class="text-muted fw-normal">inicio → fin</small></th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
             <th>Horario<br><small class="text-muted fw-normal">entrada - salida</small></th>
-            <th>Horas día</th><th>Horas día realizadas</th><th>Horas realizadas (alumno)</th><th>Horas totales (alumno)</th>
+            <th>Horas x día<br><small class="text-muted fw-normal">(editable)</small></th>
+            <th>Días/sem<br><small class="text-muted fw-normal">(editable)</small></th>
+            <th>Horas totales<br><small class="text-muted fw-normal">de esta práctica</small></th>
+            <th>Horas realizadas (alumno)</th><th>Horas totales (alumno)</th>
             <th>Tutor</th><th>Contacto</th><th colspan="2"></th>
           </tr>
         </thead>
@@ -286,7 +308,7 @@
           <div class="modal-body">
             <input type="hidden" id="practica-id">
             <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="practica-alumno" required></select></div>
-            <div class="mb-2"><label class="form-label">Lugar</label><input class="form-control" id="practica-lugar" required></div>
+            <div class="mb-2"><label class="form-label">Lugar</label><input class="form-control" id="practica-lugar" list="lugares-list" autocomplete="off" placeholder="Elegí uno existente o escribí uno nuevo" required></div>
             <div class="mb-2"><label class="form-label">Tipo de práctica</label>
               <select class="form-select" id="practica-tipo">
                 <option value="interna">Interna</option>
@@ -295,7 +317,12 @@
               </select>
             </div>
             <div class="mb-2"><label class="form-label">Sector</label><input class="form-control" id="practica-sector"></div>
-            <div class="mb-1"><label class="form-label">Fecha</label><input type="date" class="form-control" id="practica-fecha" required></div>
+            <div class="row g-2 mb-1">
+              <div class="col-6"><label class="form-label">Fecha inicio</label><input type="date" class="form-control" id="practica-fecha" required></div>
+              <div class="col-6"><label class="form-label">Fecha fin</label><input type="date" class="form-control" id="practica-fecha-fin">
+                <div class="form-text">Opcional: dejar vacío si la práctica dura un solo día.</div>
+              </div>
+            </div>
             <div class="mb-2">
               <label class="form-label mb-1">Horario</label>
               <div class="row g-2">
@@ -303,10 +330,28 @@
                 <div class="col-6"><input type="time" class="form-control" id="practica-fin" placeholder="Hora salida"><div class="form-text">Hora salida</div></div>
               </div>
             </div>
-            <div class="mb-2"><label class="form-label">Horas totales</label><input type="number" step="0.5" class="form-control" id="practica-horas" value="0"></div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label">Horas x día</label>
+                <input type="number" step="0.5" min="0" class="form-control" id="practica-horas-dia" value="0">
+                <div class="form-text">Cuántas horas debe cumplir el alumno cada día de práctica.</div>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Días por semana</label>
+                <input type="number" step="1" min="1" max="7" class="form-control" id="practica-dias-semana" value="5">
+                <div class="form-text">Cantidad de días semanales que concurre.</div>
+              </div>
+            </div>
             <div class="form-check mb-2">
               <input type="checkbox" class="form-check-input" id="practica-realizada" checked>
               <label class="form-check-label">Ya se realizó (suma a las horas cumplidas en Estadísticas)</label>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Horas totales de esta práctica</label>
+              <input type="number" step="0.5" min="0" class="form-control" id="practica-horas-totales" value="0">
+              <div class="form-text" id="practica-horas-totales-ayuda">
+                Mientras esté pendiente, se calcula sola a partir de "Horas x día", "Días por semana" y el rango de fechas.
+              </div>
             </div>
             <div class="mb-2"><label class="form-label">Tutor responsable</label><input class="form-control" id="practica-tutor"></div>
             <div class="mb-2"><label class="form-label">Email del tutor/docente (para copia en notificaciones)</label><input type="email" class="form-control" id="practica-tutor-email"></div>
@@ -379,8 +424,11 @@
       <select class="form-select mb-3" style="max-width:300px" id="falta-filtro-alumno">
         <option value="">Todos los alumnos</option>
       </select>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-faltas-masivo">Eliminar seleccionadas</button>
+      </div>
       <table class="table table-bordered">
-        <thead><tr><th>Fecha</th><th>Alumno</th><th>Justificada</th><th>Motivo</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todas-faltas"></th><th>Fecha</th><th>Alumno</th><th>Justificada</th><th>Motivo</th><th></th></tr></thead>
         <tbody id="tabla-faltas"></tbody>
       </table>
     </section>
@@ -406,7 +454,7 @@
       <form id="form-asistencia" class="row g-2 card p-3 shadow-sm mb-4">
         <div class="col-md-3"><select class="form-select" id="asist-alumno" required></select></div>
         <div class="col-md-2"><input type="date" class="form-control" id="asist-fecha" required></div>
-        <div class="col-md-2"><input class="form-control" id="asist-lugar" placeholder="Lugar"></div>
+        <div class="col-md-2"><input class="form-control" id="asist-lugar" list="lugares-list" autocomplete="off" placeholder="Lugar"></div>
         <div class="col-md-2">
           <select class="form-select" id="asist-tipo">
             <option value="interna">Interna</option>
@@ -427,8 +475,11 @@
       <select class="form-select mb-3" style="max-width:300px" id="asist-filtro-alumno">
         <option value="">Todos los alumnos</option>
       </select>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-asistencia-masivo">Eliminar seleccionadas</button>
+      </div>
       <table class="table table-bordered">
-        <thead><tr><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Presente</th><th>Entrada</th><th>Salida</th><th>Obs.</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todas-asistencia"></th><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Presente</th><th>Entrada</th><th>Salida</th><th>Obs.</th><th></th></tr></thead>
         <tbody id="tabla-asistencia"></tbody>
       </table>
     </section>
@@ -436,30 +487,51 @@
     <!-- ---------- NOTIFICACIONES ---------- -->
     <section class="vista" id="vista-notificaciones">
       <h3>Notificaciones por mail</h3>
-      <p class="text-muted">Envía un recordatorio a los alumnos con prácticas próximas.</p>
+      <p class="text-muted">Avisa a los alumnos sobre prácticas próximas (nuevas o ya cargadas).</p>
 
       <div id="notif-config-alerta" class="alert alert-warning d-none"></div>
 
-      <div class="d-flex gap-2 mb-3" style="max-width:300px">
-        <input type="number" class="form-control" id="notif-dias" value="3">
-        <button class="btn btn-outline-secondary" id="btn-notif-actualizar">Actualizar</button>
+      <div class="card p-3 shadow-sm mb-3" style="max-width:640px">
+        <h6>Configuración de avisos automáticos</h6>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Días de aviso (antes de la fecha de la práctica)</label>
+            <input type="number" min="0" class="form-control" id="notif-dias" value="3">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Copia (CC) fija para todos los avisos</label>
+            <input type="email" class="form-control" id="notif-cc-config" placeholder="coordinacion@escuela.edu.ar">
+          </div>
+        </div>
+        <div class="form-check mt-2">
+          <input type="checkbox" class="form-check-input" id="notif-auto">
+          <label class="form-check-label">Enviar automáticamente (sin apretar ningún botón)</label>
+        </div>
+        <div class="form-text">
+          Al estar tildado, cada vez que alguien inicia sesión el sistema revisa (una vez por día) si hay
+          prácticas pendientes dentro de la cantidad de días configurada y todavía no avisadas, y envía el
+          mail solo. Como esta app no tiene un servidor propio, el envío se dispara cuando alguien abre el
+          sistema con la sesión iniciada, no en un horario fijo del día.
+        </div>
+        <button class="btn btn-outline-primary btn-sm mt-2" id="btn-notif-guardar-config" style="width:fit-content">Guardar configuración</button>
       </div>
+
       <table class="table table-bordered mb-3">
         <thead><tr><th>Fecha</th><th>Alumno</th><th>Email</th><th>Lugar</th></tr></thead>
         <tbody id="tabla-notif-proximas"></tbody>
       </table>
 
       <div class="card p-3 shadow-sm mb-3" style="max-width:640px">
-        <h6>Personalizar antes de enviar</h6>
+        <h6>Personalizar antes de enviar ahora</h6>
         <div class="mb-2">
           <label class="form-label">Mensaje adicional (opcional)</label>
           <textarea class="form-control" id="notif-mensaje" rows="3" placeholder="Texto extra que se agrega al mail, por ejemplo indicaciones especiales."></textarea>
           <div class="form-text">Para que aparezca en el mail, la plantilla de EmailJS debe incluir la variable <code>{{mensaje_adicional}}</code>.</div>
         </div>
         <div class="mb-2">
-          <label class="form-label">Copia (CC) a docente/tutor (opcional)</label>
-          <input type="email" class="form-control" id="notif-cc" placeholder="docente@escuela.edu.ar">
-          <div class="form-text">Si lo dejás vacío, se usa el email de tutor cargado en cada práctica (si existe). Requiere configurar el campo "To CC" de la plantilla en EmailJS con <code>{{cc_email}}</code>.</div>
+          <label class="form-label">Copia (CC) para esta tanda (opcional)</label>
+          <input type="email" class="form-control" id="notif-cc" placeholder="Reemplaza, solo para este envío, al CC fijo de arriba">
+          <div class="form-text">Si lo dejás vacío, se usa el CC fijo configurado arriba, o el email del tutor cargado en cada práctica.</div>
         </div>
         <div class="mb-1">
           <label class="form-label">Adjuntar acuerdo de práctica (PDF, opcional)</label>
@@ -472,7 +544,7 @@
 
       <h5 class="mt-5">Historial de envíos</h5>
       <table class="table table-bordered">
-        <thead><tr><th>Fecha envío</th><th>Alumno</th><th>Estado</th><th>Detalle</th></tr></thead>
+        <thead><tr><th>Fecha envío</th><th>Alumno</th><th>Origen</th><th>Estado</th><th>Detalle</th></tr></thead>
         <tbody id="tabla-notif-historial"></tbody>
       </table>
     </section>
@@ -527,11 +599,12 @@
           <thead>
             <tr>
               <th>Fila</th><th>Legajo</th><th>Alumno</th><th>Curso</th><th>Alta</th><th>Lugar</th>
-              <th>Tipo</th><th>Fecha</th><th>Horas</th><th>Estado práctica</th><th>Validación</th>
+              <th>Tipo</th><th>Fecha inicio</th><th>Fecha fin</th><th>Horas x día</th><th>Días/sem</th>
+              <th>Horas totales</th><th>Estado práctica</th><th>Validación</th>
             </tr>
           </thead>
           <tbody id="tabla-importar-preview">
-            <tr><td colspan="11" class="text-muted">Subí un archivo para ver la vista previa.</td></tr>
+            <tr><td colspan="14" class="text-muted">Subí un archivo para ver la vista previa.</td></tr>
           </tbody>
         </table>
       </div>
@@ -541,7 +614,8 @@
       <div class="alert alert-secondary mt-4">
         <strong>Columnas que reconoce la plantilla</strong> (los nombres de encabezado no son sensibles a mayúsculas/acentos):
         Legajo, Apellido, Nombre, Email, Curso / División, Sector / Carrera, Lugar de práctica, Tipo (interna/externa/interescolar),
-        Fecha (AAAA-MM-DD o DD/MM/AAAA), Hora inicio, Hora fin, Horas totales, Tutor responsable, Email del tutor,
+        Fecha inicio (AAAA-MM-DD o DD/MM/AAAA), Fecha fin, Hora inicio, Hora fin, <strong>Horas x día</strong>,
+        <strong>Días por semana</strong> (o "Cantidad de días semanales"), Horas totales, Tutor responsable, Email del tutor,
         Contacto, Presente (si/no), Estado (realizada/pendiente), Observaciones asistencia, Notas práctica.
         Solo <strong>Legajo, Lugar de práctica y Fecha</strong> son obligatorios.
         <hr class="my-2">
@@ -549,11 +623,21 @@
         si no, se mira <em>Presente</em> (sí = realizada, no = pendiente); si tampoco hay dato, se infiere por la
         fecha (pasada o de hoy = realizada, futura = pendiente). Las horas "pendientes" no suman al cumplimiento
         en Estadísticas hasta que se confirmen como realizadas.
+        <hr class="my-2">
+        <strong>Cálculo de Horas totales:</strong> si la fila queda como <em>realizada</em>, se usa directamente el valor
+        de la columna <em>Horas totales</em> (así viene del sistema anterior o de tu carga manual). Si queda como
+        <em>pendiente</em>, las horas totales se calculan solas a partir de <em>Horas x día</em> × <em>Días por semana</em>
+        y el rango entre Fecha inicio y Fecha fin.
       </div>
     </section>
 
   </div>
 </div>
+
+<!-- Catálogo de lugares: se completa solo con los lugares que ya se cargaron
+     (a mano o por importación). El campo "Lugar" sigue siendo de texto libre
+     para poder escribir uno nuevo la primera vez que se usa. -->
+<datalist id="lugares-list"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
