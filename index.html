@@ -52,6 +52,7 @@
           <li class="nav-item"><a class="nav-link" href="#" data-view="estadisticas">Estadísticas</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Fechas de práctica</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="informes">Informes PP</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="resumen">Resumen por práctica</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="drive">Buscar en Drive</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="faltas">Faltas</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="asistencia">Asistencia</a></li>
@@ -369,8 +370,26 @@
         <h3>Informes de PP presentados</h3>
         <button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button>
       </div>
+      <div class="row g-2 mb-3">
+        <div class="col-md-3"><input class="form-control" id="if-alumno" placeholder="Alumno o legajo"></div>
+        <div class="col-md-3"><input class="form-control" id="if-lugar" placeholder="Lugar de práctica"></div>
+        <div class="col-md-2"><input class="form-control" id="if-titulo" placeholder="Título"></div>
+        <div class="col-md-2">
+          <select class="form-select" id="if-estado">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="entregado">Entregado</option>
+            <option value="aprobado">Aprobado</option>
+            <option value="rechazado">Rechazado</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+          <button class="btn btn-outline-primary" id="btn-filtrar-informes">Buscar</button>
+          <button class="btn btn-outline-secondary" id="btn-limpiar-informes">Limpiar</button>
+        </div>
+      </div>
       <table class="table table-bordered">
-        <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Enlace</th></tr></thead>
+        <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Práctica</th><th>Enlace</th></tr></thead>
         <tbody id="tabla-informes"></tbody>
       </table>
     </section>
@@ -381,6 +400,11 @@
           <div class="modal-header"><h5 class="modal-title">Informe PP</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="informe-alumno" required></select></div>
+            <div class="mb-2">
+              <label class="form-label">Práctica correspondiente (opcional)</label>
+              <select class="form-select" id="informe-practica"><option value="">Sin vincular a una práctica</option></select>
+              <div class="form-text">Vincularlo permite que aparezca en "Resumen por práctica".</div>
+            </div>
             <div class="mb-2"><label class="form-label">Título</label><input class="form-control" id="informe-titulo" required></div>
             <div class="mb-2"><label class="form-label">Fecha de presentación</label><input type="date" class="form-control" id="informe-fecha"></div>
             <div class="mb-2"><label class="form-label">Estado</label>
@@ -396,6 +420,51 @@
           </div>
           <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar</button></div>
         </form>
+      </div></div>
+    </div>
+
+    <!-- ---------- RESUMEN POR PRACTICA ---------- -->
+    <section class="vista" id="vista-resumen">
+      <h3>Resumen por práctica</h3>
+      <p class="text-muted">Agrupa las fechas de práctica por lugar, tipo y rango de fechas. Por cada una mostrás quiénes fueron asignados, quiénes asistieron, quiénes presentaron el informe correspondiente, las horas realizadas y las faltas registradas en ese período.</p>
+      <div class="row g-2 mb-3">
+        <div class="col-md-3"><input class="form-control" id="rp-lugar" placeholder="Lugar"></div>
+        <div class="col-md-2">
+          <select class="form-select" id="rp-tipo">
+            <option value="">Todos los tipos</option>
+            <option value="interna">Interna</option>
+            <option value="externa">Externa</option>
+            <option value="interescolar">Interescolar</option>
+          </select>
+        </div>
+        <div class="col-md-2"><input type="date" class="form-control" id="rp-desde" title="Desde"></div>
+        <div class="col-md-2"><input type="date" class="form-control" id="rp-hasta" title="Hasta"></div>
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-outline-primary" id="btn-filtrar-resumen">Buscar</button>
+          <button class="btn btn-outline-secondary" id="btn-limpiar-resumen">Limpiar</button>
+        </div>
+      </div>
+      <table class="table table-bordered align-middle">
+        <thead><tr>
+          <th>Lugar</th><th>Tipo</th><th>Fechas</th><th>Asignados</th>
+          <th>Asistieron</th><th>Informes presentados</th><th>Horas realizadas</th><th>Faltas registradas</th><th></th>
+        </tr></thead>
+        <tbody id="tabla-resumen-practicas"></tbody>
+      </table>
+    </section>
+
+    <div class="modal fade" id="modal-detalle-practica" tabindex="-1">
+      <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="detalle-practica-titulo">Detalle de la práctica</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Alumno</th><th>Asistió</th><th>Informe presentado</th><th>Horas realizadas</th><th>Faltas</th></tr></thead>
+            <tbody id="tabla-detalle-practica"></tbody>
+          </table>
+        </div>
       </div></div>
     </div>
 

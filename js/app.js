@@ -25,6 +25,7 @@ let practicaOrigenAlumnoId = null; // si no es null, el formulario de práctica 
 let ultimosAlumnosFiltrados = [];  // para exportar lo que se ve en pantalla
 let ultimasPracticasFiltradas = [];
 let ultimasFilasEstadisticas = [];
+let ultimosResumenPracticas = []; // grupos calculados por cargarResumenPracticas, para abrir el detalle sin volver a pedirle todo a Firestore
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -146,6 +147,7 @@ function cargarVista(nombre) {
     alumnos: cargarAlumnos,
     practicas: () => cargarPracticas(),
     informes: cargarInformes,
+    resumen: cargarResumenPracticas,
     faltas: cargarFaltas,
     asistencia: cargarAsistencia,
     notificaciones: cargarNotificaciones,
@@ -766,24 +768,70 @@ window.eliminarPractica = async (id, desdeFicha = false) => {
 };
 
 // --------------------------------------------------------------- INFORMES
-async function cargarInformes() {
-  const alumnos = await obtenerAlumnos();
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-  const snap = await getDocs(query(collection(db, "informes"), orderBy("fechaPresentacion", "desc")));
-  const informes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+// Llena el combo "Práctica correspondiente" del modal de informe con las
+// prácticas de ESE alumno en particular (para poder vincular el informe a
+// la práctica que corresponde y que después aparezca en "Resumen por
+// práctica"). Si no hay alumno seleccionado, deja solo la opción "Sin vincular".
+async function llenarSelectPracticaDeInforme(alumnoId, seleccionadaId = "") {
+  const sel = document.getElementById("informe-practica");
+  if (!alumnoId) {
+    sel.innerHTML = `<option value="">Sin vincular a una práctica</option>`;
+    return;
+  }
+  const practicas = await obtenerPracticas();
+  const propias = practicas.filter(p => p.alumnoId === alumnoId);
+  sel.innerHTML = `<option value="">Sin vincular a una práctica</option>` +
+    propias.map(p => `<option value="${p.id}" ${p.id === seleccionadaId ? "selected" : ""}>${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
+}
+document.getElementById("informe-alumno").addEventListener("change", (e) => llenarSelectPracticaDeInforme(e.target.value));
 
-  document.getElementById("tabla-informes").innerHTML = informes.map(i => `
+async function cargarInformes() {
+  const [alumnos, practicas] = await Promise.all([obtenerAlumnos(), obtenerPracticas()]);
+  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
+  const mapaPracticas = Object.fromEntries(practicas.map(p => [p.id, p]));
+
+  const snap = await getDocs(query(collection(db, "informes"), orderBy("fechaPresentacion", "desc")));
+  let informes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const fAlumno = document.getElementById("if-alumno").value.trim().toLowerCase();
+  const fLugar = document.getElementById("if-lugar").value.trim().toLowerCase();
+  const fTitulo = document.getElementById("if-titulo").value.trim().toLowerCase();
+  const fEstado = document.getElementById("if-estado").value;
+
+  informes = informes.filter(i => {
+    const alumno = mapaAlumnos[i.alumnoId];
+    const practica = i.practicaId ? mapaPracticas[i.practicaId] : null;
+    if (fAlumno && !(alumno && `${nombreCompleto(alumno)} ${alumno.legajo}`.toLowerCase().includes(fAlumno))) return false;
+    if (fLugar && !(practica?.lugar || "").toLowerCase().includes(fLugar)) return false;
+    if (fTitulo && !(i.titulo || "").toLowerCase().includes(fTitulo)) return false;
+    if (fEstado && i.estado !== fEstado) return false;
+    return true;
+  });
+
+  document.getElementById("tabla-informes").innerHTML = informes.map(i => {
+    const practica = i.practicaId ? mapaPracticas[i.practicaId] : null;
+    return `
     <tr>
       <td>${mapaAlumnos[i.alumnoId] ? nombreCompleto(mapaAlumnos[i.alumnoId]) : "-"}</td>
       <td>${i.titulo}</td><td>${fmtFecha(i.fechaPresentacion)}</td>
       <td><span class="badge badge-estado-${i.estado}">${i.estado}</span></td>
+      <td>${practica ? `${practica.lugar} (${fmtRangoFechas(practica)})` : "-"}</td>
       <td>${i.enlaceDrive ? `<a href="${i.enlaceDrive}" target="_blank">Ver archivo</a>` : ""}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="text-muted">No hay informes registrados.</td></tr>`;
+    </tr>`;
+  }).join("") || `<tr><td colspan="6" class="text-muted">No se encontraron informes.</td></tr>`;
 }
+
+document.getElementById("btn-filtrar-informes").addEventListener("click", cargarInformes);
+document.getElementById("btn-limpiar-informes").addEventListener("click", () => {
+  ["if-alumno", "if-lugar", "if-titulo"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("if-estado").value = "";
+  cargarInformes();
+});
 
 document.getElementById("btn-nuevo-informe").addEventListener("click", async () => {
   document.getElementById("form-informe").reset();
   await llenarSelectAlumnos(document.getElementById("informe-alumno"));
+  await llenarSelectPracticaDeInforme(document.getElementById("informe-alumno").value);
   abrirModal("modal-informe");
 });
 
@@ -791,6 +839,7 @@ document.getElementById("form-informe").addEventListener("submit", async (e) => 
   e.preventDefault();
   const datos = {
     alumnoId: document.getElementById("informe-alumno").value,
+    practicaId: document.getElementById("informe-practica").value || "",
     titulo: document.getElementById("informe-titulo").value.trim(),
     fechaPresentacion: document.getElementById("informe-fecha").value || new Date().toISOString().slice(0, 10),
     estado: document.getElementById("informe-estado").value,
@@ -801,6 +850,132 @@ document.getElementById("form-informe").addEventListener("submit", async (e) => 
   cerrarModal("modal-informe");
   mostrarAlerta("Informe registrado.");
   cargarInformes();
+});
+
+// ------------------------------------------------------- RESUMEN POR PRACTICA
+// La colección "practicas" tiene UN documento por alumno (cada alumno tiene su
+// propia fila con sus horas, aunque haya ido al mismo lugar en las mismas
+// fechas que sus compañeros). Para armar un resumen "por práctica" agrupamos
+// esos documentos por lugar + tipo + fecha + fechaFin: todos los que
+// comparten esos cuatro datos son, en la práctica, el mismo evento.
+function agruparPracticasPorEvento(practicas) {
+  const grupos = {};
+  practicas.forEach(p => {
+    const clave = [p.lugar || "", p.tipo || "", p.fecha || "", p.fechaFin || p.fecha || ""].join("||");
+    if (!grupos[clave]) {
+      grupos[clave] = { lugar: p.lugar || "", tipo: p.tipo || "interna", fecha: p.fecha || "", fechaFin: p.fechaFin || p.fecha || "", practicas: [] };
+    }
+    grupos[clave].practicas.push(p);
+  });
+  return Object.values(grupos).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+}
+
+async function cargarResumenPracticas() {
+  const [practicas, informesSnap, asistenciasSnap, faltasSnap] = await Promise.all([
+    obtenerPracticas(),
+    getDocs(collection(db, "informes")),
+    getDocs(collection(db, "asistencias")),
+    getDocs(collection(db, "faltas")),
+  ]);
+  const informes = informesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const asistencias = asistenciasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const faltas = faltasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Un informe "cuenta" para una práctica puntual solo si quedó vinculado a
+  // ella (campo practicaId, que se completa desde el formulario de Informes).
+  const informesPorPracticaId = {};
+  informes.forEach(i => {
+    if (!i.practicaId) return;
+    (informesPorPracticaId[i.practicaId] ||= []).push(i);
+  });
+
+  let grupos = agruparPracticasPorEvento(practicas);
+
+  const fLugar = document.getElementById("rp-lugar").value.trim().toLowerCase();
+  const fTipo = document.getElementById("rp-tipo").value;
+  const fDesde = document.getElementById("rp-desde").value;
+  const fHasta = document.getElementById("rp-hasta").value;
+
+  grupos = grupos.filter(g => {
+    if (fLugar && !g.lugar.toLowerCase().includes(fLugar)) return false;
+    if (fTipo && g.tipo !== fTipo) return false;
+    // Mismo criterio de superposición de rango que usa el filtro de Prácticas.
+    if (fDesde && g.fechaFin < fDesde) return false;
+    if (fHasta && g.fecha > fHasta) return false;
+    return true;
+  });
+
+  ultimosResumenPracticas = grupos.map(g => {
+    const detalle = g.practicas.map(p => {
+      const fin = p.fechaFin || p.fecha;
+      // "Asistió" = hay al menos un registro de asistencia presente para ese
+      // alumno, en ese lugar, con fecha dentro del rango de la práctica.
+      const asistio = asistencias.some(a =>
+        a.alumnoId === p.alumnoId && a.presente &&
+        (!p.lugar || a.lugar === p.lugar) &&
+        a.fecha >= p.fecha && a.fecha <= fin
+      );
+      // Faltas del alumno registradas dentro del rango de fechas de la práctica.
+      const cantFaltas = faltas.filter(f =>
+        f.alumnoId === p.alumnoId && f.fecha >= p.fecha && f.fecha <= fin
+      ).length;
+      const informesDelAlumno = informesPorPracticaId[p.id] || [];
+      return {
+        alumno: p.alumno,
+        asistio,
+        informe: informesDelAlumno[0] || null,
+        horasRealizadas: p.realizada !== false ? (p.horasTotales || 0) : 0,
+        faltas: cantFaltas,
+      };
+    });
+    return {
+      lugar: g.lugar, tipo: g.tipo, fecha: g.fecha, fechaFin: g.fechaFin,
+      detalle,
+      totalAsignados: detalle.length,
+      totalAsistieron: detalle.filter(d => d.asistio).length,
+      totalInformes: detalle.filter(d => d.informe).length,
+      totalHoras: detalle.reduce((acc, d) => acc + d.horasRealizadas, 0),
+      totalFaltas: detalle.reduce((acc, d) => acc + d.faltas, 0),
+    };
+  });
+
+  document.getElementById("tabla-resumen-practicas").innerHTML = ultimosResumenPracticas.map((g, idx) => `
+    <tr>
+      <td>${g.lugar || "-"}</td>
+      <td>${badgeTipo(g.tipo)}</td>
+      <td>${fmtRangoFechas({ fecha: g.fecha, fechaFin: g.fechaFin })}</td>
+      <td>${g.totalAsignados}</td>
+      <td>${g.totalAsistieron} / ${g.totalAsignados}</td>
+      <td>${g.totalInformes} / ${g.totalAsignados}</td>
+      <td>${g.totalHoras.toFixed(1)}</td>
+      <td>${g.totalFaltas}</td>
+      <td><button class="btn btn-sm btn-outline-secondary" onclick="window.verDetallePractica(${idx})">Ver alumnos</button></td>
+    </tr>`).join("") || `<tr><td colspan="9" class="text-muted">No se encontraron prácticas para ese filtro.</td></tr>`;
+}
+
+window.verDetallePractica = (idx) => {
+  const g = ultimosResumenPracticas[idx];
+  if (!g) return;
+  document.getElementById("detalle-practica-titulo").textContent =
+    `${g.lugar || "Práctica"} — ${fmtRangoFechas({ fecha: g.fecha, fechaFin: g.fechaFin })}`;
+  document.getElementById("tabla-detalle-practica").innerHTML = g.detalle.map(d => `
+    <tr>
+      <td>${d.alumno ? nombreCompleto(d.alumno) : "-"}</td>
+      <td><span class="badge bg-${d.asistio ? "success" : "secondary"}">${d.asistio ? "Sí" : "No"}</span></td>
+      <td>${d.informe
+        ? `<span class="badge bg-success">Sí</span>${d.informe.enlaceDrive ? ` <a href="${d.informe.enlaceDrive}" target="_blank">Ver</a>` : ""}`
+        : `<span class="badge bg-secondary">No</span>`}</td>
+      <td>${d.horasRealizadas.toFixed(1)}</td>
+      <td>${d.faltas}</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="text-muted">Sin alumnos asignados.</td></tr>`;
+  abrirModal("modal-detalle-practica");
+};
+
+document.getElementById("btn-filtrar-resumen").addEventListener("click", cargarResumenPracticas);
+document.getElementById("btn-limpiar-resumen").addEventListener("click", () => {
+  ["rp-lugar", "rp-desde", "rp-hasta"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("rp-tipo").value = "";
+  cargarResumenPracticas();
 });
 
 // ------------------------------------------------------------------ DRIVE
