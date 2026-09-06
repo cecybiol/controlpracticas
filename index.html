@@ -426,7 +426,7 @@
     <!-- ---------- RESUMEN POR PRACTICA ---------- -->
     <section class="vista" id="vista-resumen">
       <h3>Resumen por práctica</h3>
-      <p class="text-muted">Agrupa las fechas de práctica por lugar, tipo y rango de fechas. Por cada una mostrás quiénes fueron asignados, quiénes asistieron, quiénes presentaron el informe correspondiente, las horas realizadas y las faltas registradas en ese período.</p>
+      <p class="text-muted">Agrupa las prácticas por lugar: para cada uno mostrás cuántos alumnos pasaron por ahí, cuántas horas realizaron en total, cuántos presentaron el informe y cuántos tienen faltas registradas. "Ver alumnos" abre el detalle uno por uno.</p>
       <div class="row g-2 mb-3">
         <div class="col-md-3"><input class="form-control" id="rp-lugar" placeholder="Lugar"></div>
         <div class="col-md-2">
@@ -446,8 +446,8 @@
       </div>
       <table class="table table-bordered align-middle">
         <thead><tr>
-          <th>Lugar</th><th>Tipo</th><th>Fechas</th><th>Asignados</th>
-          <th>Asistieron</th><th>Informes presentados</th><th>Horas realizadas</th><th>Faltas registradas</th><th></th>
+          <th>Lugar</th><th>Tipo(s)</th><th>Alumnos</th>
+          <th>Horas realizadas</th><th>Informes presentados</th><th>Con faltas</th><th></th>
         </tr></thead>
         <tbody id="tabla-resumen-practicas"></tbody>
       </table>
@@ -461,7 +461,7 @@
         </div>
         <div class="modal-body">
           <table class="table table-sm table-bordered">
-            <thead><tr><th>Alumno</th><th>Asistió</th><th>Informe presentado</th><th>Horas realizadas</th><th>Faltas</th></tr></thead>
+            <thead><tr><th>Alumno</th><th>Período(s)</th><th>Horas realizadas</th><th>Asistió</th><th>Informe presentado</th><th>Faltas</th></tr></thead>
             <tbody id="tabla-detalle-practica"></tbody>
           </table>
         </div>
@@ -471,7 +471,7 @@
     <!-- ---------- DRIVE ---------- -->
     <section class="vista" id="vista-drive">
       <h3>Informes en Drive</h3>
-      <p class="text-muted">La primera vez vas a tener que iniciar sesión con Google y autorizar el acceso de solo lectura a Drive. La búsqueda recorre automáticamente todas las subcarpetas (Séptimo A, Séptimo B y la carpeta de cada alumno).</p>
+      <p class="text-muted">La primera vez vas a tener que iniciar sesión con Google y autorizar el acceso de solo lectura a Drive. La búsqueda recorre automáticamente todas las subcarpetas (Séptimo A, Séptimo B y la carpeta de cada alumno). Podés tildar uno o varios archivos y registrarlos directamente como informes de PP.</p>
       <button class="btn btn-outline-primary btn-sm mb-3" id="btn-drive-login">Conectar con Google Drive</button>
       <div class="d-flex flex-wrap gap-2 mb-3">
         <form id="form-drive-buscar" class="d-flex gap-2" style="max-width:500px">
@@ -481,11 +481,42 @@
         <button class="btn btn-outline-secondary" id="btn-drive-cargar-todos" type="button">Cargar todos los informes</button>
       </div>
       <div id="drive-estado" class="text-muted mb-2"></div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-success btn-sm" id="btn-drive-registrar-informes" type="button">Registrar informe(s) seleccionados</button>
+      </div>
       <table class="table table-bordered">
-        <thead><tr><th>Curso</th><th>Alumno</th><th>Archivo</th><th>Tipo</th><th>Modificado</th><th></th></tr></thead>
+        <thead><tr>
+          <th><input type="checkbox" id="chk-todos-drive"></th>
+          <th>Curso</th><th>Alumno</th><th>Archivo</th><th>Tipo</th><th>Modificado</th><th></th>
+        </tr></thead>
         <tbody id="tabla-drive"></tbody>
       </table>
     </section>
+
+    <div class="modal fade" id="modal-registrar-informes-drive" tabindex="-1">
+      <div class="modal-dialog modal-xl"><div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Registrar informes desde Drive</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted">Alumno, práctica, título y fecha se completaron solos a partir de la carpeta y el nombre de cada archivo — revisá y corregí lo que haga falta antes de guardar. Los que ya estaban registrados (mismo enlace de Drive) aparecen destildados.</p>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead><tr>
+                <th><input type="checkbox" id="chk-todos-registrar-drive" checked></th>
+                <th>Archivo</th><th>Alumno</th><th>Práctica</th><th>Título</th><th>Fecha</th><th>Estado</th>
+              </tr></thead>
+              <tbody id="tabla-registrar-informes-drive"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span id="registrar-drive-resumen" class="text-muted me-auto"></span>
+          <button class="btn btn-primary" id="btn-guardar-informes-drive" type="button">Guardar informes</button>
+        </div>
+      </div></div>
+    </div>
 
     <!-- ---------- FALTAS ---------- -->
     <section class="vista" id="vista-faltas">
