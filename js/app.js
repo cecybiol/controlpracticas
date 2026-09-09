@@ -1817,6 +1817,21 @@ function normalizarTexto(s) {
   return (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+// Normaliza un legajo para poder compararlo de forma confiable entre el que
+// ya está guardado (tipeado a mano) y el que viene de una planilla nueva.
+// BUG que resolvía esto: si el legajo tiene ceros a la izquierda (ej. "00456")
+// y la columna "Legajo" de la planilla está en formato Número (algo muy común
+// en Excel/CSV), esa celda se lee como "456" (sin los ceros). Como antes se
+// comparaba con normalizarTexto() a secas, "00456" != "456" y el sistema
+// pensaba que era un alumno nuevo: lo duplicaba y la práctica quedaba pegada
+// al duplicado, no al alumno original (por eso tampoco se le sumaban las horas).
+// Acá, si el legajo es puramente numérico, se le sacan los ceros a la
+// izquierda antes de comparar. Si tiene letras (ej. "A-1234") se compara tal cual.
+function normalizarLegajo(valor) {
+  const base = normalizarTexto(valor);
+  return /^\d+$/.test(base) ? base.replace(/^0+(?=\d)/, "") : base;
+}
+
 // alias de encabezados aceptados (normalizados) -> nombre de campo interno
 const CAMPOS_IMPORTAR = [
   { key: "legajo", alias: ["legajo"] },
@@ -1955,7 +1970,16 @@ document.getElementById("importar-archivo").addEventListener("change", async (e)
 
 async function procesarFilasImportar(filasCrudas) {
   const alumnos = await obtenerAlumnos(true);
-  const porLegajo = Object.fromEntries(alumnos.map(a => [normalizarTexto(a.legajo), a]));
+  const porLegajo = Object.fromEntries(alumnos.map(a => [normalizarLegajo(a.legajo), a]));
+  // Índice auxiliar por nombre+apellido, solo para poder avisar si una fila
+  // "nueva" en realidad coincide de nombre con un alumno que ya existe con
+  // OTRO legajo (posible error de tipeo en la planilla, o el problema de
+  // ceros a la izquierda si quedara algún caso no cubierto por normalizarLegajo).
+  const porNombreApellido = {};
+  alumnos.forEach(a => {
+    const clave = `${normalizarTexto(a.apellido)}|${normalizarTexto(a.nombre)}`;
+    if (clave !== "|") porNombreApellido[clave] = a;
+  });
 
   filasImportar = filasCrudas.map((cruda, idx) => {
     const datos = mapearFila(cruda);
@@ -1970,25 +1994,39 @@ async function procesarFilasImportar(filasCrudas) {
     if (fechaFinISO && !/^\d{4}-\d{2}-\d{2}$/.test(fechaFinISO)) { errores.push("Fecha fin con formato no reconocido"); fechaFinISO = ""; }
     if (fechaFinISO && fechaISO && fechaFinISO < fechaISO) errores.push("Fecha fin anterior a la fecha de inicio");
 
-    const alumnoExistente = datos.legajo ? porLegajo[normalizarTexto(datos.legajo)] : null;
+    const alumnoExistente = datos.legajo ? porLegajo[normalizarLegajo(datos.legajo)] : null;
     if (!alumnoExistente && datos.legajo && (!datos.apellido || !datos.nombre)) {
       errores.push("Alumno nuevo: falta apellido y/o nombre");
+    }
+
+    // Alerta preventiva de duplicados: si la fila se tomaría como "alumno
+    // nuevo" pero ya existe alguien con el mismo nombre y apellido (con un
+    // legajo distinto), lo señalamos para que se revise antes de confirmar,
+    // en vez de crear un alumno fantasma en silencio.
+    let posibleDuplicado = null;
+    if (!alumnoExistente && datos.apellido && datos.nombre) {
+      const clave = `${normalizarTexto(datos.apellido)}|${normalizarTexto(datos.nombre)}`;
+      posibleDuplicado = porNombreApellido[clave] || null;
     }
 
     const realizada = determinarRealizada(datos, fechaISO, fechaFinISO);
 
     // Realizada: se usa el valor de "Horas totales" tal cual viene en la
-    // planilla (importado). Pendiente: se calcula solo a partir de
+    // planilla. Si esa celda vino vacía (por ejemplo porque el docente solo
+    // completó "Horas x día" / "Días por semana", como se hace para las
+    // pendientes), NO se fuerza a 0: se calcula igual que una pendiente, para
+    // no perder esas horas. Pendiente: siempre se calcula a partir de
     // "Horas x día" y "Días por semana" (si no vinieron, se asume 5 días/sem).
     const horasPorDia = parseFloat(datos.horasPorDia || 0) || 0;
     const diasPorSemana = parseFloat(datos.diasPorSemana || 0) || 5;
-    const horasTotales = realizada
-      ? (parseFloat(datos.horasTotales || 0) || 0)
+    const hayHorasTotalesCargadas = datos.horasTotales !== undefined && datos.horasTotales !== "";
+    const horasTotales = (realizada && hayHorasTotalesCargadas)
+      ? (parseFloat(datos.horasTotales) || 0)
       : calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, diasPorSemana);
 
     return {
       fila: idx + 2, datos, fechaISO, fechaFinISO, realizada, horasPorDia, diasPorSemana, horasTotales,
-      alumnoExistente, esAlumnoNuevo: !alumnoExistente, errores,
+      alumnoExistente, esAlumnoNuevo: !alumnoExistente, posibleDuplicado, errores,
     };
   });
 
@@ -2004,7 +2042,7 @@ function renderPreviewImportar() {
     : "";
 
   document.getElementById("tabla-importar-preview").innerHTML = filasImportar.map(f => `
-    <tr class="${f.errores.length ? "table-danger" : (f.esAlumnoNuevo ? "table-warning" : "")}">
+    <tr class="${f.errores.length ? "table-danger" : (f.posibleDuplicado ? "table-warning" : (f.esAlumnoNuevo ? "table-warning" : ""))}">
       <td>${f.fila}</td>
       <td>${f.datos.legajo || ""}</td>
       <td>${f.datos.apellido || ""} ${f.datos.nombre || ""}</td>
@@ -2018,7 +2056,7 @@ function renderPreviewImportar() {
       <td>${f.diasPorSemana || ""}</td>
       <td>${f.horasTotales || 0}</td>
       <td><span class="badge bg-${f.realizada ? "success" : "secondary"}">${f.realizada ? "Realizada" : "Pendiente"}</span></td>
-      <td>${f.errores.length ? f.errores.join("; ") : "OK"}</td>
+      <td>${f.errores.length ? f.errores.join("; ") : "OK"}${f.posibleDuplicado ? `<br><span class="text-warning">⚠ Mismo nombre que el alumno con legajo "${f.posibleDuplicado.legajo}" — revisar antes de importar</span>` : ""}</td>
     </tr>`).join("") || `<tr><td colspan="14" class="text-muted">Subí un archivo para ver la vista previa.</td></tr>`;
 
   document.getElementById("btn-importar-confirmar").disabled = validos === 0;
@@ -2035,7 +2073,7 @@ document.getElementById("btn-importar-confirmar").addEventListener("click", asyn
 
   for (const f of filasImportar) {
     if (f.errores.length) { omitidas++; continue; }
-    const legajoNorm = normalizarTexto(f.datos.legajo);
+    const legajoNorm = normalizarLegajo(f.datos.legajo);
 
     try {
       let alumnoId = f.alumnoExistente?.id || legajoAId[legajoNorm];
