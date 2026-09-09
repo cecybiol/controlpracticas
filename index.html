@@ -59,6 +59,7 @@
           <li class="nav-item"><a class="nav-link" href="#" data-view="notificaciones">Notificaciones</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="alumnos">Alumnos</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar planilla</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Fusionar duplicados</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="usuarios">Usuarios</a></li>
         </ul>
         <span class="navbar-text text-light me-3" id="usuario-actual"></span>
@@ -732,6 +733,21 @@
         <em>pendiente</em>, las horas totales se calculan solas a partir de <em>Horas x día</em> × <em>Días por semana</em>
         y el rango entre Fecha inicio y Fecha fin.
       </div>
+    </section>
+
+    <!-- ---------- FUSIONAR DUPLICADOS ---------- -->
+    <section class="vista" id="vista-duplicados">
+      <h3>Fusionar alumnos duplicados</h3>
+      <p class="text-muted">
+        Busca alumnos que probablemente son la misma persona (mismo legajo, ignorando ceros a la
+        izquierda y separadores, o mismo nombre y apellido) y te deja unificarlos en un solo
+        registro: todas sus prácticas, asistencias y faltas se pasan al que elijas conservar, y
+        el/los otro(s) registro(s) se eliminan. <strong>Esta acción no se puede deshacer</strong>,
+        revisá bien cada grupo antes de fusionar.
+      </p>
+      <button class="btn btn-outline-secondary btn-sm mb-3" id="btn-buscar-duplicados">Buscar duplicados</button>
+      <div id="duplicados-resumen" class="text-muted mb-2"></div>
+      <div id="duplicados-lista"></div>
     </section>
 
   </div>

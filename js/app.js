@@ -28,6 +28,7 @@ let ultimasFilasEstadisticas = [];
 let ultimosResumenPracticas = []; // grupos calculados por cargarResumenPracticas, para abrir el detalle sin volver a pedirle todo a Firestore
 let ultimosArchivosDrive = []; // últimos resultados de la tabla "Buscar en Drive", para saber qué archivos quedaron tildados
 let filasRegistrarDrive = []; // filas del modal "Registrar informes desde Drive", con el archivo original de cada una
+let ultimosGruposDuplicados = null; // { grupos, practicas, asistencias, faltas } calculado por cargarDuplicados, para que window.fusionarGrupo no tenga que volver a pedirle todo a Firestore
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -156,6 +157,7 @@ function cargarVista(nombre) {
     usuarios: cargarUsuarios,
     drive: () => {},
     importar: () => {},
+    duplicados: cargarDuplicados,
   };
   cargadores[nombre]?.();
 }
@@ -1817,19 +1819,19 @@ function normalizarTexto(s) {
   return (s ?? "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
-// Normaliza un legajo para poder compararlo de forma confiable entre el que
-// ya está guardado (tipeado a mano) y el que viene de una planilla nueva.
-// BUG que resolvía esto: si el legajo tiene ceros a la izquierda (ej. "00456")
-// y la columna "Legajo" de la planilla está en formato Número (algo muy común
-// en Excel/CSV), esa celda se lee como "456" (sin los ceros). Como antes se
-// comparaba con normalizarTexto() a secas, "00456" != "456" y el sistema
-// pensaba que era un alumno nuevo: lo duplicaba y la práctica quedaba pegada
-// al duplicado, no al alumno original (por eso tampoco se le sumaban las horas).
-// Acá, si el legajo es puramente numérico, se le sacan los ceros a la
-// izquierda antes de comparar. Si tiene letras (ej. "A-1234") se compara tal cual.
-function normalizarLegajo(valor) {
-  const base = normalizarTexto(valor);
-  return /^\d+$/.test(base) ? base.replace(/^0+(?=\d)/, "") : base;
+// Clave de comparación para "legajo": además de normalizarTexto, sacamos
+// separadores de miles/espacios y ceros a la izquierda. Esto es necesario
+// porque Excel/Sheets suelen leer una columna de legajo como NÚMERO: un
+// legajo "0045" guardado en la base como texto se puede reimportar como
+// 45, o un legajo con formato de miles puede llegar como "1.234" o "1,234".
+// Sin esta normalización, esas variantes no matchean contra el alumno ya
+// existente y el importador termina creando un alumno duplicado (y por lo
+// tanto la práctica nueva no se suma a las horas del alumno original,
+// porque las horas se calculan sumando por alumnoId).
+function normalizarLegajo(s) {
+  let v = normalizarTexto(s).replace(/[\s.,]/g, "");
+  if (/^0*\d+$/.test(v)) v = v.replace(/^0+(?=\d)/, ""); // sacar ceros a la izq. solo si es puramente numérico
+  return v;
 }
 
 // alias de encabezados aceptados (normalizados) -> nombre de campo interno
@@ -1971,15 +1973,9 @@ document.getElementById("importar-archivo").addEventListener("change", async (e)
 async function procesarFilasImportar(filasCrudas) {
   const alumnos = await obtenerAlumnos(true);
   const porLegajo = Object.fromEntries(alumnos.map(a => [normalizarLegajo(a.legajo), a]));
-  // Índice auxiliar por nombre+apellido, solo para poder avisar si una fila
-  // "nueva" en realidad coincide de nombre con un alumno que ya existe con
-  // OTRO legajo (posible error de tipeo en la planilla, o el problema de
-  // ceros a la izquierda si quedara algún caso no cubierto por normalizarLegajo).
-  const porNombreApellido = {};
-  alumnos.forEach(a => {
-    const clave = `${normalizarTexto(a.apellido)}|${normalizarTexto(a.nombre)}`;
-    if (clave !== "|") porNombreApellido[clave] = a;
-  });
+  const porNombre = Object.fromEntries(
+    alumnos.map(a => [`${normalizarTexto(a.apellido)}|${normalizarTexto(a.nombre)}`, a])
+  );
 
   filasImportar = filasCrudas.map((cruda, idx) => {
     const datos = mapearFila(cruda);
@@ -1999,34 +1995,34 @@ async function procesarFilasImportar(filasCrudas) {
       errores.push("Alumno nuevo: falta apellido y/o nombre");
     }
 
-    // Alerta preventiva de duplicados: si la fila se tomaría como "alumno
-    // nuevo" pero ya existe alguien con el mismo nombre y apellido (con un
-    // legajo distinto), lo señalamos para que se revise antes de confirmar,
-    // en vez de crear un alumno fantasma en silencio.
-    let posibleDuplicado = null;
+    // Red de seguridad: si el legajo no matcheó pero ya existe un alumno con
+    // el mismo nombre y apellido, probablemente es la misma persona con el
+    // legajo mal tipeado (o deformado por Excel) en esta fila. No lo tratamos
+    // como error bloqueante (podría ser un homónimo real), pero lo marcamos
+    // para que se revise antes de confirmar la importación.
+    let advertencia = "";
     if (!alumnoExistente && datos.apellido && datos.nombre) {
-      const clave = `${normalizarTexto(datos.apellido)}|${normalizarTexto(datos.nombre)}`;
-      posibleDuplicado = porNombreApellido[clave] || null;
+      const posibleDuplicado = porNombre[`${normalizarTexto(datos.apellido)}|${normalizarTexto(datos.nombre)}`];
+      if (posibleDuplicado) {
+        advertencia = `Ya existe "${nombreCompleto(posibleDuplicado)}" con legajo "${posibleDuplicado.legajo}". ` +
+          `Si es la misma persona, corregí el legajo de esta fila para no duplicarla.`;
+      }
     }
 
     const realizada = determinarRealizada(datos, fechaISO, fechaFinISO);
 
     // Realizada: se usa el valor de "Horas totales" tal cual viene en la
-    // planilla. Si esa celda vino vacía (por ejemplo porque el docente solo
-    // completó "Horas x día" / "Días por semana", como se hace para las
-    // pendientes), NO se fuerza a 0: se calcula igual que una pendiente, para
-    // no perder esas horas. Pendiente: siempre se calcula a partir de
+    // planilla (importado). Pendiente: se calcula solo a partir de
     // "Horas x día" y "Días por semana" (si no vinieron, se asume 5 días/sem).
     const horasPorDia = parseFloat(datos.horasPorDia || 0) || 0;
     const diasPorSemana = parseFloat(datos.diasPorSemana || 0) || 5;
-    const hayHorasTotalesCargadas = datos.horasTotales !== undefined && datos.horasTotales !== "";
-    const horasTotales = (realizada && hayHorasTotalesCargadas)
-      ? (parseFloat(datos.horasTotales) || 0)
+    const horasTotales = realizada
+      ? (parseFloat(datos.horasTotales || 0) || 0)
       : calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, diasPorSemana);
 
     return {
       fila: idx + 2, datos, fechaISO, fechaFinISO, realizada, horasPorDia, diasPorSemana, horasTotales,
-      alumnoExistente, esAlumnoNuevo: !alumnoExistente, posibleDuplicado, errores,
+      alumnoExistente, esAlumnoNuevo: !alumnoExistente, errores, advertencia,
     };
   });
 
@@ -2042,7 +2038,7 @@ function renderPreviewImportar() {
     : "";
 
   document.getElementById("tabla-importar-preview").innerHTML = filasImportar.map(f => `
-    <tr class="${f.errores.length ? "table-danger" : (f.posibleDuplicado ? "table-warning" : (f.esAlumnoNuevo ? "table-warning" : ""))}">
+    <tr class="${f.errores.length ? "table-danger" : (f.advertencia ? "table-warning" : (f.esAlumnoNuevo ? "table-warning" : ""))}">
       <td>${f.fila}</td>
       <td>${f.datos.legajo || ""}</td>
       <td>${f.datos.apellido || ""} ${f.datos.nombre || ""}</td>
@@ -2056,7 +2052,7 @@ function renderPreviewImportar() {
       <td>${f.diasPorSemana || ""}</td>
       <td>${f.horasTotales || 0}</td>
       <td><span class="badge bg-${f.realizada ? "success" : "secondary"}">${f.realizada ? "Realizada" : "Pendiente"}</span></td>
-      <td>${f.errores.length ? f.errores.join("; ") : "OK"}${f.posibleDuplicado ? `<br><span class="text-warning">⚠ Mismo nombre que el alumno con legajo "${f.posibleDuplicado.legajo}" — revisar antes de importar</span>` : ""}</td>
+      <td>${f.errores.length ? f.errores.join("; ") : (f.advertencia ? `⚠️ ${f.advertencia}` : "OK")}</td>
     </tr>`).join("") || `<tr><td colspan="14" class="text-muted">Subí un archivo para ver la vista previa.</td></tr>`;
 
   document.getElementById("btn-importar-confirmar").disabled = validos === 0;
@@ -2142,3 +2138,148 @@ document.getElementById("btn-importar-confirmar").addEventListener("click", asyn
   document.getElementById("importar-archivo").value = "";
   btn.textContent = textoOriginal;
 });
+
+// ------------------------------------------------------- FUSIONAR DUPLICADOS -
+// Agrupa alumnos que probablemente son la misma persona: mismo legajo
+// normalizado (normalizarLegajo, que ignora ceros a la izquierda y
+// separadores) O mismo nombre y apellido normalizados. Se usa un union-find
+// simple para que, si A matchea con B por legajo y B matchea con C por
+// nombre, los tres terminen en un solo grupo.
+function buscarGruposDuplicados(alumnos) {
+  const padre = {};
+  alumnos.forEach(a => { padre[a.id] = a.id; });
+  function encontrar(x) { while (padre[x] !== x) x = padre[x]; return x; }
+  function unir(x, y) { const rx = encontrar(x), ry = encontrar(y); if (rx !== ry) padre[rx] = ry; }
+
+  const porLegajo = {}, porNombre = {};
+  alumnos.forEach(a => {
+    const lk = normalizarLegajo(a.legajo);
+    if (lk) { if (porLegajo[lk] !== undefined) unir(a.id, porLegajo[lk]); else porLegajo[lk] = a.id; }
+    const nk = `${normalizarTexto(a.apellido)}|${normalizarTexto(a.nombre)}`;
+    if (nk !== "|") { if (porNombre[nk] !== undefined) unir(a.id, porNombre[nk]); else porNombre[nk] = a.id; }
+  });
+
+  const grupos = {};
+  alumnos.forEach(a => { (grupos[encontrar(a.id)] ||= []).push(a); });
+  return Object.values(grupos).filter(g => g.length > 1);
+}
+
+async function cargarDuplicados() {
+  document.getElementById("duplicados-resumen").textContent = "Buscando...";
+  const [alumnos, practicasSnap, asistSnap, faltasSnap] = await Promise.all([
+    obtenerAlumnos(true),
+    getDocs(collection(db, "practicas")),
+    getDocs(collection(db, "asistencias")),
+    getDocs(collection(db, "faltas")),
+  ]);
+  const practicas = practicasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const asistencias = asistSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const faltas = faltasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const grupos = buscarGruposDuplicados(alumnos);
+  ultimosGruposDuplicados = { grupos, practicas, asistencias, faltas };
+
+  document.getElementById("duplicados-resumen").innerHTML = grupos.length
+    ? `Se encontraron <strong>${grupos.length}</strong> posible(s) grupo(s) de alumnos duplicados.`
+    : "No se encontraron alumnos duplicados (mismo legajo o mismo nombre y apellido). Si sabés que hay uno y no aparece, puede que el nombre esté escrito distinto en cada registro.";
+
+  document.getElementById("duplicados-lista").innerHTML = grupos.map((g, gi) => {
+    const filas = g.map(a => {
+      const propias = practicas.filter(p => p.alumnoId === a.id);
+      const horasRealizadas = propias.filter(p => p.realizada !== false).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
+      const horasPendientes = propias.filter(p => p.realizada === false).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
+      const nAsist = asistencias.filter(x => x.alumnoId === a.id).length;
+      const nFaltas = faltas.filter(x => x.alumnoId === a.id).length;
+      return { a, propias, horasRealizadas, horasPendientes, nAsist, nFaltas };
+    });
+    // sugerido para "mantener": el que tiene más prácticas cargadas y, si hay empate, más horas realizadas
+    let sugeridoIdx = 0;
+    filas.forEach((f, i) => {
+      const s = filas[sugeridoIdx];
+      if (f.propias.length > s.propias.length || (f.propias.length === s.propias.length && f.horasRealizadas > s.horasRealizadas)) sugeridoIdx = i;
+    });
+    const totalHoras = filas.reduce((s, f) => s + f.horasRealizadas, 0);
+    const totalPracticas = filas.reduce((s, f) => s + f.propias.length, 0);
+
+    return `
+      <div class="card p-3 mb-3 shadow-sm">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h6 class="mb-0">Grupo ${gi + 1}: ${nombreCompleto(g[0])}</h6>
+          <span class="badge bg-secondary">${g.length} registros</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-2">
+            <thead>
+              <tr><th>Mantener</th><th>Legajo</th><th>Nombre</th><th>Curso</th><th>Prácticas</th><th>Hs. realizadas</th><th>Hs. pendientes</th><th>Asist.</th><th>Faltas</th></tr>
+            </thead>
+            <tbody>
+              ${filas.map((f, i) => `
+                <tr>
+                  <td><input type="radio" name="mantener-${gi}" value="${f.a.id}" ${i === sugeridoIdx ? "checked" : ""}></td>
+                  <td>${f.a.legajo || ""}</td>
+                  <td>${nombreCompleto(f.a)}</td>
+                  <td>${f.a.curso || ""}</td>
+                  <td>${f.propias.length}</td>
+                  <td>${f.horasRealizadas.toFixed(1)}</td>
+                  <td>${f.horasPendientes.toFixed(1)}</td>
+                  <td>${f.nAsist}</td>
+                  <td>${f.nFaltas}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="text-muted small mb-2">
+          Si fusionás este grupo, el registro que quede va a sumar <strong>${totalHoras.toFixed(1)} hs realizadas</strong> en <strong>${totalPracticas} práctica(s)</strong> en total.
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="window.fusionarGrupo(${gi})">Fusionar en el marcado</button>
+      </div>`;
+  }).join("");
+}
+
+document.getElementById("btn-buscar-duplicados").addEventListener("click", cargarDuplicados);
+
+window.fusionarGrupo = async (gi) => {
+  const { grupos, practicas, asistencias, faltas } = ultimosGruposDuplicados || {};
+  const g = grupos?.[gi];
+  if (!g) return;
+
+  const radio = document.querySelector(`input[name="mantener-${gi}"]:checked`);
+  if (!radio) { mostrarAlerta("Elegí a cuál registro mantener antes de fusionar.", "warning"); return; }
+  const idPrincipal = radio.value;
+  const principal = g.find(a => a.id === idPrincipal);
+  const otros = g.filter(a => a.id !== idPrincipal);
+
+  const confirmacion = confirm(
+    `Se van a pasar todas las prácticas, asistencias y faltas de ${otros.map(nombreCompleto).join(", ")} a ${nombreCompleto(principal)}, ` +
+    `y esos ${otros.length} registro(s) duplicado(s) se van a borrar. Esta acción no se puede deshacer. ¿Confirmás?`
+  );
+  if (!confirmacion) return;
+
+  try {
+    const idsOtros = new Set(otros.map(a => a.id));
+    const reasignaciones = [
+      ...practicas.filter(p => idsOtros.has(p.alumnoId)).map(p => updateDoc(doc(db, "practicas", p.id), { alumnoId: idPrincipal })),
+      ...asistencias.filter(x => idsOtros.has(x.alumnoId)).map(x => updateDoc(doc(db, "asistencias", x.id), { alumnoId: idPrincipal })),
+      ...faltas.filter(x => idsOtros.has(x.alumnoId)).map(x => updateDoc(doc(db, "faltas", x.id), { alumnoId: idPrincipal })),
+    ];
+    await Promise.all(reasignaciones);
+
+    // Completa datos vacíos del registro que se mantiene con datos de los duplicados (no pisa lo que ya tenía)
+    const relleno = {};
+    ["email", "sector", "curso", "legajo"].forEach(campo => {
+      if (!principal[campo]) {
+        const conDato = otros.find(o => o[campo]);
+        if (conDato) relleno[campo] = conDato[campo];
+      }
+    });
+    if (Object.keys(relleno).length) await updateDoc(doc(db, "alumnos", idPrincipal), relleno);
+
+    await Promise.all(otros.map(a => deleteDoc(doc(db, "alumnos", a.id))));
+
+    cacheAlumnos = [];
+    mostrarAlerta(`Listo: ${otros.length} registro(s) duplicado(s) se unificaron en ${nombreCompleto(principal)}.`);
+    await cargarDuplicados();
+  } catch (err) {
+    mostrarAlerta("No se pudo completar la fusión. Probá de nuevo.", "danger");
+  }
+};
