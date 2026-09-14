@@ -7,14 +7,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-  getDocs, getDoc, query, orderBy, setDoc,
+  getDocs, getDoc, query, orderBy, setDoc, where, limit,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-if (window.emailjs && emailjsConfig.publicKey !== "TU_PUBLIC_KEY") {
+if (window.emailjs && emailjsConfigCompleta()) {
   window.emailjs.init({ publicKey: emailjsConfig.publicKey });
 }
 
@@ -24,6 +24,7 @@ let cacheLugares = [];    // catálogo de lugares para el combo desplegable de "
 let practicaOrigenAlumnoId = null; // si no es null, el formulario de práctica se abrió desde la ficha de ese alumno
 let ultimosAlumnosFiltrados = [];  // para exportar lo que se ve en pantalla
 let ultimasPracticasFiltradas = [];
+let acumuladosPracticas = {};
 let ultimasFilasEstadisticas = [];
 let ultimosResumenPracticas = []; // grupos calculados por cargarResumenPracticas, para abrir el detalle sin volver a pedirle todo a Firestore
 let ultimosArchivosDrive = []; // últimos resultados de la tabla "Buscar en Drive", para saber qué archivos quedaron tildados
@@ -35,7 +36,11 @@ function mostrarAlerta(mensaje, tipo = "success") {
   const cont = document.getElementById("alertas");
   const div = document.createElement("div");
   div.className = `alert alert-${tipo} alert-dismissible fade show`;
-  div.innerHTML = `${mensaje}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+  div.textContent = mensaje;
+  const cerrar = document.createElement("button");
+  cerrar.type = "button"; cerrar.className = "btn-close";
+  cerrar.setAttribute("data-bs-dismiss", "alert");
+  div.appendChild(cerrar);
   cont.appendChild(div);
   setTimeout(() => div.remove(), 6000);
 }
@@ -58,10 +63,7 @@ function fmtRangoFechas(p) {
 // Exporta una lista de filas (array de arrays) con encabezados a un .xlsx,
 // reutilizado por los botones "Exportar" de Alumnos, Prácticas y Estadísticas.
 function exportarXLSX(nombreArchivo, nombreHoja, encabezados, filas) {
-  const ws = XLSX.utils.aoa_to_sheet([encabezados, ...filas]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
-  XLSX.writeFile(wb, nombreArchivo);
+  return exportarLibro(nombreArchivo, [{ nombre: nombreHoja, encabezados, filas }]);
 }
 
 // Devuelve la fecha de HOY en formato AAAA-MM-DD usando la hora LOCAL del
@@ -107,6 +109,7 @@ function diasEntreISO(fechaISO, fechaFinISO) {
 function calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, diasPorSemana) {
   if (!fechaISO || !horasPorDia) return 0;
   const dias = diasEntreISO(fechaISO, fechaFinISO);
+  if (!Number.isFinite(dias) || dias < 1) return 0;
   if (dias <= 1) return +horasPorDia.toFixed(2);
   const diasSemana = Math.min(7, Math.max(1, diasPorSemana || 5));
   const diasDePractica = Math.max(1, Math.round((dias / 7) * diasSemana));
@@ -129,7 +132,7 @@ function badgeTipo(tipo) {
 }
 
 function abrirModal(id) {
-  new bootstrap.Modal(document.getElementById(id)).show();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).show();
 }
 function cerrarModal(id) {
   bootstrap.Modal.getInstance(document.getElementById(id))?.hide();
@@ -159,7 +162,7 @@ function cargarVista(nombre) {
     importar: () => {},
     duplicados: cargarDuplicados,
   };
-  cargadores[nombre]?.();
+  Promise.resolve().then(() => cargadores[nombre]?.()).catch(err => mostrarAlerta(`No se pudo cargar la vista: ${err.message || err}`, "danger"));
 }
 
 document.querySelectorAll("[data-view]").forEach(a => {
@@ -208,6 +211,9 @@ onAuthStateChanged(auth, async (user) => {
     revisarYEnviarNotificacionesAutomaticas();
   } else {
     usuarioActual = null;
+    cacheAlumnos = []; cacheLugares = [];
+    ultimosAlumnosFiltrados = []; ultimasPracticasFiltradas = [];
+    ultimasFilasEstadisticas = []; ultimosResumenPracticas = [];
     document.getElementById("app-shell").classList.add("d-none");
     document.getElementById("login-view").classList.remove("d-none");
   }
@@ -371,6 +377,7 @@ async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
   document.getElementById("tabla-alumno-practicas").innerHTML = propias.map(p => `
     <tr>
       <td>${fmtRangoFechas(p)}</td><td>${p.lugar}</td>
+      <td>${String(p.sector || "Sin especificar").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]))}</td>
       <td>${badgeTipo(p.tipo)}</td>
       <td><span class="badge bg-${p.realizada !== false ? "success" : "secondary"}">${p.realizada !== false ? "Realizada" : "Pendiente"}</span></td>
       <td>${p.horasTotales}</td>
@@ -378,7 +385,7 @@ async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.editarPractica('${p.id}', true)">Editar</button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.eliminarPractica('${p.id}', true)">Eliminar</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="6" class="text-muted">Este alumno todavía no tiene prácticas cargadas.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="7" class="text-muted">Este alumno todavía no tiene prácticas cargadas.</td></tr>`;
 }
 
 window.editarAlumno = async (id) => {
@@ -480,7 +487,7 @@ async function cargarPracticas() {
   todasLasPracticas.forEach(p => {
     if (!p.alumnoId) return;
     if (!acumPorAlumno[p.alumnoId]) acumPorAlumno[p.alumnoId] = { totalHoras: 0, horasRealizadas: 0 };
-    const horas = p.horasTotales || 0;
+    const horas = numeroHoras(p.horasTotales);
     acumPorAlumno[p.alumnoId].totalHoras += horas;
     if (p.realizada !== false) acumPorAlumno[p.alumnoId].horasRealizadas += horas;
   });
@@ -508,6 +515,7 @@ async function cargarPracticas() {
     return true;
   });
 
+  acumuladosPracticas = acumPorAlumno;
   ultimasPracticasFiltradas = practicas;
 
   const chkTodas = document.getElementById("chk-todas-practicas");
@@ -541,9 +549,9 @@ async function cargarPracticas() {
       </td>
       <td>
         ${pendiente
-          ? `<span title="Calculado solo a partir de horas x día, días/sem y el rango de fechas">${(p.horasTotales || 0).toFixed(1)}</span>`
+          ? `<span title="Calculado solo a partir de horas x día, días/sem y el rango de fechas">${(numeroHoras(p.horasTotales)).toFixed(1)}</span>`
           : `<input type="number" step="0.5" min="0" class="form-control form-control-sm" style="width:90px"
-              value="${p.horasTotales || 0}" title="Horas totales reales de esta práctica"
+              value="${numeroHoras(p.horasTotales)}" title="Horas totales reales de esta práctica"
               onchange="window.actualizarHorasTotalesReal('${p.id}', this.value)">`}
       </td>
       <td>${acum.horasRealizadas.toFixed(1)}</td>
@@ -559,7 +567,8 @@ async function cargarPracticas() {
 // modal. Si la práctica está pendiente, recalcula las horas totales solas;
 // si ya se realizó, solo guarda el dato de referencia (el total no se toca).
 window.actualizarHorasPorDia = async (id, valor) => {
-  const horasPorDia = parseFloat(valor) || 0;
+  const horasPorDia = Number(valor);
+  if (!Number.isFinite(horasPorDia) || horasPorDia < 0 || horasPorDia > 24) { mostrarAlerta("Las horas diarias deben estar entre 0 y 24.", "warning"); return; }
   const p = ultimasPracticasFiltradas.find(x => x.id === id);
   const cambios = { horasPorDia };
   if (p && p.realizada === false) {
@@ -573,8 +582,8 @@ window.actualizarHorasPorDia = async (id, valor) => {
 // Edición rápida de "días por semana". Misma lógica: recalcula el total solo
 // si la práctica sigue pendiente.
 window.actualizarDiasSemana = async (id, valor) => {
-  let diasPorSemana = parseFloat(valor) || 5;
-  diasPorSemana = Math.min(7, Math.max(1, diasPorSemana));
+  const diasPorSemana = Number(valor);
+  if (!Number.isInteger(diasPorSemana) || diasPorSemana < 1 || diasPorSemana > 7) { mostrarAlerta("Ingresá entre 1 y 7 días enteros.", "warning"); return; }
   const p = ultimasPracticasFiltradas.find(x => x.id === id);
   const cambios = { diasPorSemana };
   if (p && p.realizada === false) {
@@ -588,7 +597,8 @@ window.actualizarDiasSemana = async (id, valor) => {
 // Edición rápida de "horas totales" para prácticas YA REALIZADAS: acá el
 // valor se carga a mano (o vino de una importación) y no se recalcula solo.
 window.actualizarHorasTotalesReal = async (id, valor) => {
-  const horasTotales = parseFloat(valor) || 0;
+  const horasTotales = Number(valor);
+  if (!Number.isFinite(horasTotales) || horasTotales < 0) { mostrarAlerta("Ingresá horas totales válidas, mayores o iguales a cero.", "warning"); return; }
   await updateDoc(doc(db, "practicas", id), { horasTotales });
   mostrarAlerta("Horas totales actualizadas.");
   cargarPracticas();
@@ -612,18 +622,13 @@ document.getElementById("btn-exportar-practicas")?.addEventListener("click", () 
   const encabezados = ["Fecha inicio", "Fecha fin", "Alumno", "Legajo", "Lugar", "Tipo", "Estado", "Sector",
     "Hora entrada", "Hora salida", "Horas x día", "Días por semana", "Horas totales (práctica)",
     "Horas realizadas (alumno)", "Horas totales (alumno)", "Tutor", "Contacto"];
-  const acumPorAlumno = {};
-  ultimasPracticasFiltradas.forEach(p => {
-    if (!p.alumnoId) return;
-    if (!acumPorAlumno[p.alumnoId]) acumPorAlumno[p.alumnoId] = { totalHoras: 0, horasRealizadas: 0 };
-  });
   const filas = ultimasPracticasFiltradas.map(p => [
     fmtFecha(p.fecha), p.fechaFin ? fmtFecha(p.fechaFin) : "",
     p.alumno ? nombreCompleto(p.alumno) : "", p.alumno?.legajo || "",
     p.lugar || "", infoTipo(p.tipo).label, p.realizada !== false ? "Realizada" : "Pendiente", p.sector || "",
     p.horaInicio || "", p.horaFin || "", p.horasPorDia ?? p.horasTotales ?? 0, p.diasPorSemana ?? 5,
-    p.horasTotales || 0,
-    "", "",
+    numeroHoras(p.horasTotales),
+    acumuladosPracticas[p.alumnoId]?.horasRealizadas ?? 0, acumuladosPracticas[p.alumnoId]?.totalHoras ?? 0,
     p.tutorResponsable || "", p.contacto || "",
   ]);
   exportarXLSX("practicas.xlsx", "Prácticas", encabezados, filas);
@@ -740,6 +745,12 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     notas: document.getElementById("practica-notas").value.trim(),
   };
   if (id) {
+    const anterior = await getDoc(doc(db, "practicas", id));
+    const camposAviso = ["alumnoId", "fecha", "fechaFin", "lugar", "horaInicio", "horaFin", "tutorResponsable", "tutorEmail", "contacto"];
+    if (anterior.exists() && camposAviso.some(c => (anterior.data()[c] || "") !== (datos[c] || ""))) {
+      datos.avisoAutomaticoEnviado = false;
+      avisosEnviadosSesion.delete(id);
+    }
     await updateDoc(doc(db, "practicas", id), datos);
   } else {
     await addDoc(collection(db, "practicas"), datos);
@@ -925,7 +936,7 @@ async function cargarResumenPracticas() {
 
     const detalle = Object.values(porAlumno).map(entry => {
       const horasRealizadas = entry.periodos.reduce(
-        (acc, p) => acc + (p.realizada !== false ? (p.horasTotales || 0) : 0), 0
+        (acc, p) => acc + (p.realizada !== false ? (numeroHoras(p.horasTotales)) : 0), 0
       );
       // "Asistió" = hay al menos un registro de asistencia presente para ese
       // alumno en ese lugar, dentro de alguno de sus períodos.
@@ -1011,6 +1022,7 @@ document.getElementById("btn-limpiar-resumen").addEventListener("click", () => {
 // ------------------------------------------------------------------ DRIVE
 // Nombre corto y prolijo para el tipo de archivo, en vez del mimeType crudo.
 function tipoArchivoLegible(mimeType) {
+  if (mimeType === "application/vnd.google-apps.document") return "Google Docs";
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "Word (.docx)";
   if (mimeType === "application/msword") return "Word (.doc)";
@@ -1398,9 +1410,8 @@ document.getElementById("form-asistencia").addEventListener("submit", async (e) 
 
 // ------------------------------------------------------- NOTIFICACIONES -
 function emailjsConfigCompleta() {
-  return emailjsConfig.publicKey !== "TU_PUBLIC_KEY"
-    && emailjsConfig.serviceId !== "TU_SERVICE_ID"
-    && emailjsConfig.templateId !== "TU_TEMPLATE_ID";
+  return [emailjsConfig?.publicKey, emailjsConfig?.serviceId, emailjsConfig?.templateId]
+    .every(v => typeof v === "string" && v.trim() && !/^(TU_|YOUR_)/i.test(v));
 }
 
 function actualizarAlertaConfigNotif() {
@@ -1441,9 +1452,12 @@ document.getElementById("btn-notif-guardar-config").addEventListener("click", as
   const diasAviso = parseInt(document.getElementById("notif-dias").value || "3", 10);
   const ccEmail = document.getElementById("notif-cc-config").value.trim();
   const automatico = document.getElementById("notif-auto").checked;
+  if (!Number.isInteger(diasAviso) || diasAviso < 0 || (ccEmail && !emailValido(ccEmail))) {
+    mostrarAlerta("Revisá los días de aviso y el correo de copia.", "warning"); return;
+  }
   await setDoc(doc(db, "configuracion", "notificaciones"), { diasAviso, ccEmail, automatico });
   mostrarAlerta("Configuración de avisos guardada.");
-  renderProximasYHistorial();
+  await renderProximasYHistorial();
 });
 
 // Refresca la tabla de "próximas" y el historial usando el valor de "días de
@@ -1460,7 +1474,7 @@ async function renderProximasYHistorial() {
   const snap = await getDocs(collection(db, "practicas"));
   const proximas = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .filter(p => p.fecha >= hoy && p.fecha <= limite)
+    .filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   document.getElementById("tabla-notif-proximas").innerHTML = proximas.map(p => `
@@ -1473,7 +1487,7 @@ async function renderProximasYHistorial() {
 
   document.getElementById("btn-notif-enviar").dataset.proximas = JSON.stringify(proximas);
 
-  const histSnap = await getDocs(query(collection(db, "notificaciones_log"), orderBy("fechaEnvio", "desc")));
+  const histSnap = await getDocs(query(collection(db, "notificaciones_log"), orderBy("fechaEnvio", "desc"), limit(30)));
   const historial = histSnap.docs.map(d => d.data()).slice(0, 30);
   document.getElementById("tabla-notif-historial").innerHTML = historial.map(h => `
     <tr>
@@ -1497,84 +1511,95 @@ function leerArchivoComoBase64(file) {
   });
 }
 
-document.getElementById("btn-notif-enviar").addEventListener("click", async (e) => {
-  const proximas = JSON.parse(e.target.dataset.proximas || "[]");
-  const alumnos = await obtenerAlumnos();
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
+let envioEnCurso = false;
+const avisosEnviadosSesion = new Set();
 
-  if (!window.emailjs || !emailjsConfigCompleta()) {
-    mostrarAlerta("Falta configurar EmailJS (publicKey, serviceId y templateId) en js/firebase-config.js (ver README).", "warning");
-    return;
-  }
-  if (!proximas.length) {
-    mostrarAlerta("No hay prácticas próximas para notificar en este rango de días.", "warning");
-    return;
-  }
+function emailValido(valor) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(valor || "").trim());
+}
 
-  const config = await obtenerConfigNotificaciones();
-  const mensajeAdicional = document.getElementById("notif-mensaje").value.trim();
-  const ccOverride = document.getElementById("notif-cc").value.trim();
-  const ccPorDefecto = ccOverride || config.ccEmail || "";
-  const archivoAdjunto = document.getElementById("notif-adjunto").files[0] || null;
-
-  let adjuntoBase64 = "";
-  if (archivoAdjunto) {
-    try {
-      adjuntoBase64 = await leerArchivoComoBase64(archivoAdjunto);
-    } catch (err) {
-      mostrarAlerta("No se pudo leer el PDF adjunto, se enviará sin adjunto.", "warning");
-    }
-  }
-
-  const btn = document.getElementById("btn-notif-enviar");
-  btn.disabled = true;
-  const textoOriginal = btn.textContent;
-  btn.textContent = "Enviando...";
-
-  let enviados = 0, errores = 0;
-  for (const p of proximas) {
-    const alumno = mapaAlumnos[p.alumnoId];
-    let estado = "error", detalle = "Alumno sin email cargado";
-    if (alumno?.email) {
-      const params = {
-        to_email: alumno.email,
-        to_name: alumno.nombre,
-        lugar: p.lugar,
-        fecha: fmtFecha(p.fecha),
-        horario: `${p.horaInicio || ""} - ${p.horaFin || ""}`,
-        tutor: p.tutorResponsable || "",
-        contacto: p.contacto || "",
-        cc_email: ccPorDefecto || p.tutorEmail || "",
-        mensaje_adicional: mensajeAdicional,
-      };
-      if (adjuntoBase64) {
-        params.adjunto_acuerdo = adjuntoBase64;
-        params.adjunto_nombre = archivoAdjunto.name;
-      }
+async function enviarTanda(proximas, { origen, cc = "", mensaje = "", adjunto = "", nombreAdjunto = "" }) {
+  if (envioEnCurso) throw new Error("Ya hay una tanda de correos en curso.");
+  if (!window.emailjs || !emailjsConfigCompleta()) throw new Error("Falta configurar EmailJS.");
+  if (cc && !emailValido(cc)) throw new Error("Revisá el correo de copia (CC).");
+  envioEnCurso = true;
+  let enviados = 0, errores = 0, omitidos = 0;
+  try {
+    const alumnos = await obtenerAlumnos(true);
+    const mapa = Object.fromEntries(alumnos.map(a => [a.id, a]));
+    for (const candidata of proximas) {
+      // Volver a leer evita usar una lista desactualizada después de otro envío.
+      const snap = await getDoc(doc(db, "practicas", candidata.id));
+      if (!snap.exists()) { omitidos++; continue; }
+      const p = { ...snap.data(), id: candidata.id };
+      if (p.realizada !== false || p.avisoAutomaticoEnviado || avisosEnviadosSesion.has(p.id)) { omitidos++; continue; }
+      const alumno = mapa[p.alumnoId];
+      let estado = "error", detalle = "Alumno sin correo válido";
+      const copia = cc || p.tutorEmail || "";
+      if (emailValido(alumno?.email) && (!copia || emailValido(copia))) {
+        const params = {
+          to_email: alumno.email.trim(), to_name: nombreCompleto(alumno),
+          name: alumno.nombre || "", apellido: alumno.apellido || "",
+          lugar: p.lugar || "", fecha: fmtRangoFechas(p),
+          horario: `${p.horaInicio || ""} - ${p.horaFin || ""}`,
+          tutor: p.tutorResponsable || "", contacto: p.contacto || "",
+          cc_email: copia.trim(), mensaje_adicional: mensaje,
+        };
+        if (adjunto) { params.adjunto_acuerdo = adjunto; params.adjunto_nombre = nombreAdjunto; }
+        try {
+          await window.emailjs.send(emailjsConfig.serviceId, emailjsConfig.templateId, params);
+          estado = "enviado"; enviados++;
+          avisosEnviadosSesion.add(p.id);
+          detalle = "Aceptado por EmailJS; entrega en bandeja no confirmada";
+        } catch (err) {
+          detalle = `EmailJS ${err.status || ""}: ${err.text || err.message || "Error de envío"}`;
+          errores++;
+        }
+        // EmailJS admite una solicitud por segundo, incluso si la anterior falla.
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      } else { errores++; if (copia && !emailValido(copia)) detalle = "Correo de copia inválido"; }
       try {
-        await window.emailjs.send(emailjsConfig.serviceId, emailjsConfig.templateId, params);
-        estado = "enviado";
-        detalle = params.cc_email ? `Con copia a ${params.cc_email}` : "";
-        enviados++;
+        if (estado === "enviado") await updateDoc(doc(db, "practicas", p.id), {
+          avisoAutomaticoEnviado: true, fechaAviso: new Date().toISOString(),
+        });
+        await addDoc(collection(db, "notificaciones_log"), {
+          alumnoId: p.alumnoId, practicaId: p.id, tipo: "recordatorio_practica",
+          origen, estado, detalle, fechaEnvio: new Date().toISOString(),
+        });
       } catch (err) {
-        detalle = "Error al enviar el mail"; errores++;
+        throw new Error(`Tanda detenida. Aceptados por EmailJS: ${enviados}. No se pudo guardar el estado de la práctica ${p.id}. Revisá el historial de EmailJS antes de reintentar.`);
       }
-    } else { errores++; }
-
-    if (estado === "enviado") {
-      // Evita que el revisor automático vuelva a avisar por esta misma práctica.
-      await updateDoc(doc(db, "practicas", p.id), { avisoAutomaticoEnviado: true }).catch(() => {});
     }
-    await addDoc(collection(db, "notificaciones_log"), {
-      alumnoId: p.alumnoId, practicaId: p.id, tipo: "recordatorio_practica",
-      origen: "manual", estado, detalle, fechaEnvio: new Date().toISOString(),
-    });
-  }
+    return { enviados, errores, omitidos };
+  } finally { envioEnCurso = false; }
+}
 
-  btn.disabled = false;
-  btn.textContent = textoOriginal;
-  mostrarAlerta(`Notificaciones enviadas: ${enviados}. Errores: ${errores}.`, "info");
-  cargarNotificaciones();
+document.getElementById("btn-notif-enviar").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled || envioEnCurso) return;
+  btn.disabled = true;
+  const texto = btn.textContent;
+  btn.textContent = "Enviando...";
+  try {
+    const dias = Number(document.getElementById("notif-dias").value);
+    if (!Number.isInteger(dias) || dias < 0) throw new Error("Ingresá una cantidad válida de días.");
+    const hoy = hoyISO(), limite = sumarDiasISO(hoy, dias);
+    const proximas = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado);
+    if (!proximas.length) { mostrarAlerta("No hay prácticas pendientes sin avisar en este rango.", "info"); return; }
+    const config = await obtenerConfigNotificaciones();
+    const archivo = document.getElementById("notif-adjunto").files[0];
+    if (archivo && (!/\.pdf$/i.test(archivo.name) || (archivo.type && archivo.type !== "application/pdf"))) throw new Error("El adjunto debe ser un PDF.");
+    // Si no se puede leer, se detiene: nunca enviar omitiendo el acuerdo elegido.
+    const adjunto = archivo ? await leerArchivoComoBase64(archivo) : "";
+    const r = await enviarTanda(proximas, {
+      origen: "manual", cc: document.getElementById("notif-cc").value.trim() || config.ccEmail || "",
+      mensaje: document.getElementById("notif-mensaje").value.trim(),
+      adjunto, nombreAdjunto: archivo?.name || "",
+    });
+    mostrarAlerta(`Aceptados por EmailJS: ${r.enviados}. Errores: ${r.errores}. Omitidos: ${r.omitidos}.`, "info");
+    await cargarNotificaciones();
+  } catch (err) { mostrarAlerta(err.message || "No se pudo enviar la tanda.", "danger"); }
+  finally { btn.disabled = false; btn.textContent = texto; }
 });
 
 // Revisión automática: se llama una vez al iniciar sesión. Si el envío
@@ -1582,65 +1607,20 @@ document.getElementById("btn-notif-enviar").addEventListener("click", async (e) 
 // dentro de la cantidad de días configurada que todavía no se avisaron, y las
 // manda solas (con el CC fijo configurado). Como esta app no tiene backend
 // propio, esto se dispara cuando alguien abre el sistema con sesión iniciada
-// (una vez por día por navegador), no en un horario fijo del día.
+// (en cada inicio de sesión), no en un horario fijo del día.
 async function revisarYEnviarNotificacionesAutomaticas() {
+  if (envioEnCurso) return;
   try {
-    const hoy = hoyISO();
-    if (localStorage.getItem("ultimaRevisionNotifAuto") === hoy) return;
-
     const config = await obtenerConfigNotificaciones();
-    if (!config.automatico) { localStorage.setItem("ultimaRevisionNotifAuto", hoy); return; }
-    if (!window.emailjs || !emailjsConfigCompleta()) return;
-
-    const limite = sumarDiasISO(hoy, config.diasAviso ?? 3);
-    const alumnos = await obtenerAlumnos();
-    const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-
-    const snap = await getDocs(collection(db, "practicas"));
-    const pendientesDeAviso = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado);
-
-    localStorage.setItem("ultimaRevisionNotifAuto", hoy);
-    if (!pendientesDeAviso.length) return;
-
-    let enviados = 0;
-    for (const p of pendientesDeAviso) {
-      const alumno = mapaAlumnos[p.alumnoId];
-      let estado = "error", detalle = "Alumno sin email cargado";
-      if (alumno?.email) {
-        const params = {
-          to_email: alumno.email,
-          to_name: alumno.nombre,
-          lugar: p.lugar,
-          fecha: fmtFecha(p.fecha),
-          horario: `${p.horaInicio || ""} - ${p.horaFin || ""}`,
-          tutor: p.tutorResponsable || "",
-          contacto: p.contacto || "",
-          cc_email: config.ccEmail || p.tutorEmail || "",
-          mensaje_adicional: "",
-        };
-        try {
-          await window.emailjs.send(emailjsConfig.serviceId, emailjsConfig.templateId, params);
-          estado = "enviado";
-          detalle = params.cc_email ? `Con copia a ${params.cc_email}` : "";
-          enviados++;
-        } catch (err) {
-          detalle = "Error al enviar el mail";
-        }
-      }
-      if (estado === "enviado") {
-        await updateDoc(doc(db, "practicas", p.id), { avisoAutomaticoEnviado: true }).catch(() => {});
-      }
-      await addDoc(collection(db, "notificaciones_log"), {
-        alumnoId: p.alumnoId, practicaId: p.id, tipo: "recordatorio_practica",
-        origen: "automatico", estado, detalle, fechaEnvio: new Date().toISOString(),
-      });
-    }
-    if (enviados) mostrarAlerta(`Se enviaron ${enviados} aviso(s) automático(s) de prácticas próximas.`, "info");
-  } catch (err) {
-    console.error("Error revisando notificaciones automáticas", err);
-  }
+    if (!config.automatico || !window.emailjs || !emailjsConfigCompleta()) return;
+    const dias = Number(config.diasAviso);
+    if (!Number.isInteger(dias) || dias < 0) throw new Error("Días de aviso inválidos.");
+    const hoy = hoyISO(), limite = sumarDiasISO(hoy, dias);
+    const pendientes = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado);
+    if (!pendientes.length) return;
+    const r = await enviarTanda(pendientes, { origen: "automatico", cc: config.ccEmail || "" });
+    mostrarAlerta(`Avisos automáticos aceptados: ${r.enviados}. Errores: ${r.errores}.`, "info");
+  } catch (err) { mostrarAlerta(err.message || "Error al revisar avisos automáticos.", "danger"); }
 }
 
 // ------------------------------------------------------------- USUARIOS -
@@ -1681,7 +1661,7 @@ async function cargarDashboard() {
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = snap.docs.map(d => d.data());
 
-  const totalHoras = practicas.reduce((acc, p) => acc + (p.realizada !== false ? (p.horasTotales || 0) : 0), 0);
+  const totalHoras = practicas.reduce((acc, p) => acc + (p.realizada !== false ? (numeroHoras(p.horasTotales)) : 0), 0);
   document.getElementById("stat-horas").textContent = totalHoras.toFixed(1);
   document.getElementById("stat-alumnos").textContent = alumnos.length;
   document.getElementById("stat-practicas").textContent = practicas.length;
@@ -1689,7 +1669,7 @@ async function cargarDashboard() {
   const porSector = {};
   practicas.filter(p => p.realizada !== false).forEach(p => {
     const s = p.sector || "Sin sector";
-    porSector[s] = (porSector[s] || 0) + (p.horasTotales || 0);
+    porSector[s] = (porSector[s] || 0) + (numeroHoras(p.horasTotales));
   });
   document.getElementById("tabla-horas-sector").innerHTML = Object.entries(porSector)
     .map(([s, h]) => `<tr><td>${s}</td><td>${h.toFixed(1)}</td></tr>`).join("")
@@ -1721,7 +1701,7 @@ async function cargarEstadisticas() {
 
   let totalRealizadas = 0, totalPendientes = 0, totalInterna = 0, totalExterna = 0, totalInterescolar = 0;
   practicas.forEach(p => {
-    const horas = p.horasTotales || 0;
+    const horas = numeroHoras(p.horasTotales);
     const esRealizada = p.realizada !== false; // sin dato = compatibilidad con carga manual previa
 
     if (esRealizada) {
@@ -1930,6 +1910,7 @@ function determinarRealizada(datos, fechaISO, fechaFinISO) {
 }
 
 document.getElementById("btn-importar-plantilla").addEventListener("click", () => {
+  if (!window.XLSX) { mostrarAlerta("No se cargó Excel. Recargá la página.", "danger"); return; }
   const encabezados = ["Legajo", "Apellido", "Nombre", "Email", "Curso / División", "Sector / Carrera", "Lugar de práctica",
     "Tipo (interna/externa/interescolar)", "Fecha inicio (AAAA-MM-DD)", "Fecha fin (AAAA-MM-DD)", "Hora inicio", "Hora fin",
     "Horas x día (si está pendiente)", "Días por semana (si está pendiente)", "Horas totales (si ya se realizó)",
@@ -2283,3 +2264,97 @@ window.fusionarGrupo = async (gi) => {
     mostrarAlerta("No se pudo completar la fusión. Probá de nuevo.", "danger");
   }
 };
+
+// Exportaciones: todas usan el mismo escritor y conservan números y tildes.
+function numeroHoras(valor) {
+  const numero = Number(typeof valor === "string" ? valor.replace(",", ".") : valor);
+  return Number.isFinite(numero) && numero >= 0 ? numero : 0;
+}
+function exportarLibro(nombreArchivo, hojas) {
+  if (!window.XLSX) { mostrarAlerta("No se cargó el componente de Excel. Revisá la conexión y recargá la página.", "danger"); return false; }
+  try {
+    const wb = XLSX.utils.book_new();
+    for (const hoja of hojas) {
+      const datos = [hoja.encabezados, ...hoja.filas];
+      const ws = XLSX.utils.aoa_to_sheet(datos);
+      ws["!cols"] = hoja.encabezados.map((h, i) => ({ wch: Math.min(55, datos.reduce((max, f) => Math.max(max, Math.min(55, String(f[i] ?? "").length + 2)), 12)) }));
+      if (hoja.filas.length) ws["!autofilter"] = { ref: ws["!ref"] };
+      XLSX.utils.book_append_sheet(wb, ws, hoja.nombre);
+    }
+    XLSX.writeFile(wb, nombreArchivo);
+    return true;
+  } catch (err) { mostrarAlerta(`No se pudo generar Excel: ${err.message || err}`, "danger"); return false; }
+}
+function filaPractica(p) {
+  return [p.id, fmtFecha(p.fecha), fmtFecha(p.fechaFin || p.fecha), p.lugar || "", p.sector || "", infoTipo(p.tipo).label,
+    p.realizada !== false ? "Realizada" : "Pendiente (estimada)", numeroHoras(p.horasTotales),
+    p.horaInicio || "", p.horaFin || "", p.tutorResponsable || "", p.contacto || ""];
+}
+const columnasPractica = ["ID práctica", "Inicio", "Fin", "Lugar", "Sector / carrera", "Tipo de práctica", "Estado", "Horas", "Entrada", "Salida", "Tutor", "Contacto"];
+
+async function accionExportar(btn, accion) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try { await accion(); }
+  catch (err) { mostrarAlerta(`No se pudo exportar: ${err.message || err}`, "danger"); }
+  finally { btn.disabled = false; }
+}
+
+document.getElementById("btn-exportar-resumen").addEventListener("click", e => accionExportar(e.currentTarget, async () => {
+  await cargarResumenPracticas();
+  const grupos = ultimosResumenPracticas;
+  if (!grupos.length) { mostrarAlerta("No hay prácticas para esos filtros.", "warning"); return; }
+  exportarLibro(`resumen_practicas_${hoyISO()}.xlsx`, [
+    { nombre: "Resumen por lugar", encabezados: ["Lugar", "Tipos", "Alumnos", "Horas realizadas", "Alumnos con algún informe", "Alumnos con faltas en período"],
+      filas: grupos.map(g => [g.lugar, g.tipos.map(t => infoTipo(t).label).join(", "), g.totalAlumnos, g.totalHoras, g.totalInformes, g.totalConFaltas]) },
+    { nombre: "Detalle por alumno", encabezados: ["Lugar", "Alumno", "Legajo", "Períodos", "Horas realizadas", "Alguna asistencia registrada", "Algún informe vinculado", "Días de falta en período"],
+      filas: grupos.flatMap(g => g.detalle.map(d => [g.lugar, d.alumno ? nombreCompleto(d.alumno) : "Alumno no encontrado", d.alumno?.legajo || "", d.periodos.map(fmtRangoFechas).join("; "), d.horasRealizadas, d.asistio ? "Sí" : "Sin registro", d.informe ? "Sí" : "No", d.faltas])) },
+    { nombre: "Períodos", encabezados: ["Alumno", ...columnasPractica],
+      filas: grupos.flatMap(g => g.detalle.flatMap(d => d.periodos.map(p => [d.alumno ? nombreCompleto(d.alumno) : "Alumno no encontrado", ...filaPractica(p)]))) },
+    { nombre: "Criterios", encabezados: ["Criterio", "Valor"], filas: [
+      ["Generado", new Date().toLocaleString("es-AR")],
+      ...["rp-lugar", "rp-tipo", "rp-desde", "rp-hasta"].map(id => [id, document.getElementById(id).value || "Todos"]),
+      ["Horas", "Totales del período completo que se superpone con el filtro; no prorrateados"],
+      ["Faltas", "Fechas de falta del alumno dentro del período; el registro original no identifica lugar/práctica"],
+      ["Informes", "Algún informe vinculado no significa que todos los períodos estén cubiertos"],
+    ] },
+  ]);
+}));
+
+document.getElementById("btn-exportar-ficha").addEventListener("click", e => accionExportar(e.currentTarget, async () => {
+  const id = document.getElementById("alumno-id").value;
+  if (!id) { mostrarAlerta("Primero guardá el alumno.", "warning"); return; }
+  const [alumnos, practicas, asistencias, faltas, informes] = await Promise.all([
+    obtenerAlumnos(true), obtenerPracticas(),
+    getDocs(query(collection(db, "asistencias"), where("alumnoId", "==", id))),
+    getDocs(query(collection(db, "faltas"), where("alumnoId", "==", id))),
+    getDocs(query(collection(db, "informes"), where("alumnoId", "==", id))),
+  ]);
+  const a = alumnos.find(a => a.id === id);
+  if (!a) throw new Error("El alumno ya no existe.");
+  const propias = practicas.filter(p => p.alumnoId === id);
+  const realizadas = propias.filter(p => p.realizada !== false).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
+  const pendientes = propias.filter(p => p.realizada === false).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
+  const registros = snap => snap.docs.map(d => d.data()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
+  const nombre = String(a.legajo || a.id).replace(/[^\p{L}\p{N}_-]/gu, "_");
+  exportarLibro(`ficha_${nombre}_${hoyISO()}.xlsx`, [
+    { nombre: "Ficha", encabezados: ["Dato", "Valor"], filas: [["Alumno", nombreCompleto(a)], ["Legajo", a.legajo || ""], ["Curso", a.curso || ""], ["Sector", a.sector || ""], ["Email", a.email || ""], ["Horas realizadas", realizadas], ["Horas pendientes estimadas", pendientes], ["Cantidad de prácticas", propias.length], ["Generado", new Date().toLocaleString("es-AR")], ["Criterio", "Horas tomadas de prácticas; asistencias y faltas no se suman ni descuentan automáticamente."]] },
+    { nombre: "Prácticas", encabezados: columnasPractica, filas: propias.map(filaPractica) },
+    { nombre: "Asistencias", encabezados: ["Fecha", "Lugar", "Tipo", "Presente", "Entrada", "Salida", "Observaciones"], filas: registros(asistencias).map(r => [fmtFecha(r.fecha), r.lugar || "", infoTipo(r.tipo).label, r.presente ? "Sí" : "No", r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""]) },
+    { nombre: "Faltas", encabezados: ["Fecha", "Justificada", "Motivo"], filas: registros(faltas).map(r => [fmtFecha(r.fecha), r.justificada ? "Sí" : "No", r.motivo || ""]) },
+    { nombre: "Informes", encabezados: ["Fecha", "Título", "Práctica vinculada", "Enlace"], filas: registros(informes).map(r => [fmtFecha(r.fecha), r.titulo || "", r.practicaId || "", r.enlaceDrive || ""]) },
+  ]);
+}));
+
+for (const [boton, coleccion, filtro] of [["btn-exportar-asistencias", "asistencias", "asist-filtro-alumno"], ["btn-exportar-faltas", "faltas", "falta-filtro-alumno"]]) {
+  document.getElementById(boton).addEventListener("click", e => accionExportar(e.currentTarget, async () => {
+    const id = document.getElementById(filtro).value;
+    const [alumnos, snap] = await Promise.all([obtenerAlumnos(), getDocs(id ? query(collection(db, coleccion), where("alumnoId", "==", id)) : collection(db, coleccion))]);
+    const mapa = Object.fromEntries(alumnos.map(a => [a.id, a]));
+    const filas = snap.docs.map(d => d.data()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
+    const asistencia = coleccion === "asistencias";
+    exportarXLSX(`${coleccion}_${hoyISO()}.xlsx`, asistencia ? "Asistencias" : "Faltas",
+      ["Fecha", "Alumno", "Legajo", ...(asistencia ? ["Lugar", "Presente", "Entrada", "Salida", "Observaciones"] : ["Justificada", "Motivo"])],
+      filas.map(r => [fmtFecha(r.fecha), mapa[r.alumnoId] ? nombreCompleto(mapa[r.alumnoId]) : r.alumnoId, mapa[r.alumnoId]?.legajo || "", ...(asistencia ? [r.lugar || "", r.presente ? "Sí" : "No", r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""] : [r.justificada ? "Sí" : "No", r.motivo || ""])]));
+  }));
+}

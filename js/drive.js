@@ -9,6 +9,7 @@ const MIME_CARPETA = "application/vnd.google-apps.folder";
 // de que algún informe viejo no esté todavía en .docx.
 const MIMES_INFORME = new Set([
   "application/pdf",
+  "application/vnd.google-apps.document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
   "application/msword", // .doc
 ]);
@@ -23,7 +24,8 @@ const CACHE_VIGENCIA_MS = 5 * 60 * 1000;
 
 /** Se llama al hacer click en "Conectar con Google Drive". Pide permiso de solo lectura. */
 export function initApp() {
-  if (!window.google || !window.google.accounts) {
+  if (!googleDriveConfig?.clientId || !googleDriveConfig?.folderId) { alert("Falta configurar clientId y folderId de Google Drive."); return; }
+  if (!window.google?.accounts?.oauth2) {
     alert("Todavía está cargando Google. Esperá un segundo y volvé a intentar.");
     return;
   }
@@ -31,7 +33,9 @@ export function initApp() {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: googleDriveConfig.clientId,
       scope: "https://www.googleapis.com/auth/drive.readonly",
+      error_callback: () => { document.getElementById("drive-estado").textContent = "No se completó la conexión. Volvé a conectar con Google Drive."; },
       callback: (resp) => {
+        if (resp.error) { document.getElementById("drive-estado").textContent = "Google no autorizó el acceso. Volvé a conectar."; return; }
         if (resp.access_token) {
           accessToken = resp.access_token;
           cacheArbol = null; // token nuevo -> descartamos cualquier cache vieja
@@ -59,11 +63,11 @@ async function listarHijos(folderId) {
       `https://www.googleapis.com/drive/v3/files?q=${q}` +
       `&fields=nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)` +
       `&pageSize=1000&orderBy=name` +
-      (pageToken ? `&pageToken=${pageToken}` : "");
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
 
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!res.ok) {
-      if (res.status === 401) accessToken = null; // token vencido, hay que reconectar
+      if (res.status === 401) { accessToken = null; cacheArbol = null; document.getElementById("drive-estado").textContent = "La sesión venció. Volvé a conectar con Google Drive."; } // token vencido, hay que reconectar
       throw new Error(`Error de Drive: ${res.status}`);
     }
     const data = await res.json();
@@ -101,9 +105,9 @@ async function recorrerCarpetas(folderId, ruta = []) {
   // Las subcarpetas se piden en paralelo (curso -> alumno son como mucho un
   // puñado de carpetas cada nivel), así que esto es rápido incluso con
   // varias decenas de alumnos.
-  const listasHijas = await Promise.all(
-    subcarpetas.map((c) => recorrerCarpetas(c.id, [...ruta, c.name]))
-  );
+  const listasHijas = [];
+  // Recorrido secuencial: evita ráfagas de solicitudes en árboles grandes.
+  for (const c of subcarpetas) listasHijas.push(await recorrerCarpetas(c.id, [...ruta, c.name]));
 
   return archivos.concat(...listasHijas);
 }
@@ -119,6 +123,7 @@ async function recorrerCarpetas(folderId, ruta = []) {
  * pisarla (por ejemplo, después de subir un informe nuevo a Drive).
  */
 export async function cargarTodosLosInformes({ forzarRefresco = false } = {}) {
+  if (!accessToken) throw new Error("Conectá Google Drive antes de buscar.");
   const ahora = Date.now();
   if (!forzarRefresco && cacheArbol && ahora - cacheTimestamp < CACHE_VIGENCIA_MS) {
     return cacheArbol;

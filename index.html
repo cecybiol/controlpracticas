@@ -8,6 +8,8 @@
 <link href="css/style.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
+  .vista { display: none; }
+  .vista.activa { display: block; }
   /* Color de referencia por tipo de práctica, para distinguirlas de un
      vistazo en las tablas y en Estadísticas. */
   .badge-tipo-interna { background-color: #6c757d; color: #fff; }
@@ -209,7 +211,7 @@
         <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-alumnos">Exportar a Excel</button>
       </div>
       <table class="table table-bordered">
-        <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector</th><th>Email</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector / carrera</th><th>Email</th><th></th></tr></thead>
         <tbody id="tabla-alumnos"></tbody>
       </table>
     </section>
@@ -237,10 +239,11 @@
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <h6 class="mb-0">Prácticas de este alumno</h6>
                 <button type="button" class="btn btn-sm btn-outline-primary" id="btn-alumno-nueva-practica">+ Agregar práctica</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-ficha">Exportar ficha a Excel</button>
               </div>
               <div class="table-responsive" style="max-height:260px; overflow-y:auto;">
                 <table class="table table-sm table-bordered mb-0">
-                  <thead><tr><th>Fecha</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Horas</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Lugar</th><th>Sector / carrera</th><th>Tipo de práctica</th><th>Estado</th><th>Horas</th><th></th></tr></thead>
                   <tbody id="tabla-alumno-practicas"></tbody>
                 </table>
               </div>
@@ -442,6 +445,7 @@
         <div class="col-md-2"><input type="date" class="form-control" id="rp-hasta" title="Hasta"></div>
         <div class="col-md-3 d-flex gap-2">
           <button class="btn btn-outline-primary" id="btn-filtrar-resumen">Buscar</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-resumen">Exportar resumen a Excel</button>
           <button class="btn btn-outline-secondary" id="btn-limpiar-resumen">Limpiar</button>
         </div>
       </div>
@@ -530,6 +534,7 @@
       </select>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-faltas-masivo">Eliminar seleccionadas</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-faltas">Exportar faltas a Excel</button>
       </div>
       <table class="table table-bordered">
         <thead><tr><th><input type="checkbox" id="chk-todas-faltas"></th><th>Fecha</th><th>Alumno</th><th>Justificada</th><th>Motivo</th><th></th></tr></thead>
@@ -581,6 +586,7 @@
       </select>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-asistencia-masivo">Eliminar seleccionadas</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-asistencias">Exportar asistencias a Excel</button>
       </div>
       <table class="table table-bordered">
         <thead><tr><th><input type="checkbox" id="chk-todas-asistencia"></th><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Presente</th><th>Entrada</th><th>Salida</th><th>Obs.</th><th></th></tr></thead>
@@ -590,7 +596,7 @@
 
     <!-- ---------- NOTIFICACIONES ---------- -->
     <section class="vista" id="vista-notificaciones">
-      <h3>Notificaciones por mail</h3>
+      <h3>Notificaciones por mail</h3><p class="text-muted">La lista muestra prácticas pendientes sin aviso previo. “Enviado” significa aceptado por EmailJS; no confirma recepción.</p>
       <p class="text-muted">Avisa a los alumnos sobre prácticas próximas (nuevas o ya cargadas).</p>
 
       <div id="notif-config-alerta" class="alert alert-warning d-none"></div>
@@ -609,10 +615,10 @@
         </div>
         <div class="form-check mt-2">
           <input type="checkbox" class="form-check-input" id="notif-auto">
-          <label class="form-check-label">Enviar automáticamente (sin apretar ningún botón)</label>
+          <label class="form-check-label">Revisar y enviar al iniciar sesión</label>
         </div>
         <div class="form-text">
-          Al estar tildado, cada vez que alguien inicia sesión el sistema revisa (una vez por día) si hay
+          Al estar tildado, cada vez que alguien inicia sesión el sistema revisa si hay
           prácticas pendientes dentro de la cantidad de días configurada y todavía no avisadas, y envía el
           mail solo. Como esta app no tiene un servidor propio, el envío se dispara cuando alguien abre el
           sistema con la sesión iniciada, no en un horario fijo del día.
