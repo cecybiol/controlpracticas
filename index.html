@@ -21,6 +21,12 @@
   .th-ordenable:hover { text-decoration: underline; }
   .link-alumno-ficha { text-decoration: none; font-weight: 600; }
   .link-alumno-ficha:hover { text-decoration: underline; }
+  /* Barra de progreso apilada por tipo de práctica (Estadísticas): mismos
+     colores que las badge-tipo-* para identificarlas de un vistazo. */
+  .barra-tipos { display: flex; height: 18px; border-radius: .25rem; overflow: hidden; background-color: #e9ecef; min-width: 140px; }
+  .barra-tipos .seg-interna { background-color: #6c757d; }
+  .barra-tipos .seg-externa { background-color: #0dcaf0; }
+  .barra-tipos .seg-interescolar { background-color: #8e44ad; }
 </style>
 </head>
 <body>
@@ -124,10 +130,41 @@
       <h3>Estadísticas de cumplimiento</h3>
       <p class="text-muted">Porcentaje de práctica realizada por alumno, calculado sobre el total de horas que ya tiene cargadas ese alumno en sus propias prácticas (realizadas + pendientes), y desglose por prácticas internas / externas / interescolares.</p>
 
-      <div class="row g-2 align-items-end mb-4">
+      <div class="row g-2 align-items-end mb-3">
         <div class="col-auto">
           <button class="btn btn-outline-secondary" id="btn-estad-actualizar">Actualizar</button>
         </div>
+      </div>
+
+      <!-- Objetivo de horas: es el mismo para todos los alumnos del colegio,
+           un valor por tipo de práctica. Solo un admin puede modificarlo;
+           el resto de la vista lo usa para calcular el % cumplido real. -->
+      <div class="card p-3 shadow-sm mb-4 admin-only d-none">
+        <h6 class="mb-2">Objetivo de horas (mismo para todos los alumnos)</h6>
+        <div class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label small text-muted mb-0" for="estad-obj-interna">
+              <span class="badge badge-tipo-interna">Interna</span> a cumplir
+            </label>
+            <input type="number" min="0" step="0.5" class="form-control form-control-sm" id="estad-obj-interna" style="width:110px">
+          </div>
+          <div class="col-auto">
+            <label class="form-label small text-muted mb-0" for="estad-obj-externa">
+              <span class="badge badge-tipo-externa">Externa</span> a cumplir
+            </label>
+            <input type="number" min="0" step="0.5" class="form-control form-control-sm" id="estad-obj-externa" style="width:110px">
+          </div>
+          <div class="col-auto">
+            <label class="form-label small text-muted mb-0" for="estad-obj-interescolar">
+              <span class="badge badge-tipo-interescolar">Interescolar</span> a cumplir
+            </label>
+            <input type="number" min="0" step="0.5" class="form-control form-control-sm" id="estad-obj-interescolar" style="width:110px">
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-primary btn-sm" id="btn-estad-guardar-objetivo">Guardar objetivo</button>
+          </div>
+        </div>
+        <p class="text-muted small mb-0 mt-2">Si se deja en 0 alguno de los campos, ese tipo de práctica no exige horas mínimas. Si los tres quedan en 0 (sin configurar), el % cumplido se calcula como antes, contra el total propio de cada alumno.</p>
       </div>
 
       <div class="row mb-2">
@@ -146,7 +183,7 @@
         <div class="col-md-3">
           <div class="card card-stat text-center p-3 shadow-sm">
             <div class="fs-4 fw-bold" id="estad-horas-realizadas">0</div>
-            <div class="text-muted">Horas realizadas</div>
+            <div class="text-muted">Horas realizadas (total)</div>
           </div>
         </div>
         <div class="col-md-3">
@@ -157,22 +194,22 @@
         </div>
       </div>
       <div class="row mb-4">
-        <div class="col-md-3 offset-md-3">
+        <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-horas-internas">0</div>
-            <div class="text-muted"><span class="badge badge-tipo-interna">Interna</span> realizadas</div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-internas">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-interna-total">0</span> hs</span></div>
+            <div class="text-muted"><span class="badge badge-tipo-interna">Interna</span> realizadas / a cumplir</div>
           </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-horas-externas">0</div>
-            <div class="text-muted"><span class="badge badge-tipo-externa">Externa</span> realizadas</div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-externas">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-externa-total">0</span> hs</span></div>
+            <div class="text-muted"><span class="badge badge-tipo-externa">Externa</span> realizadas / a cumplir</div>
           </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-horas-interescolar">0</div>
-            <div class="text-muted"><span class="badge badge-tipo-interescolar">Interescolar</span> realizadas</div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-interescolar">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-interescolar-total">0</span> hs</span></div>
+            <div class="text-muted"><span class="badge badge-tipo-interescolar">Interescolar</span> realizadas / a cumplir</div>
           </div>
         </div>
       </div>
@@ -219,11 +256,11 @@
             <th>Legajo</th>
             <th class="th-ordenable" data-campo="horasRealizadas">Horas realizadas</th>
             <th class="th-ordenable" data-campo="horasPendientes">Horas pendientes</th>
-            <th class="th-ordenable" data-campo="horasInterna">Internas</th>
-            <th class="th-ordenable" data-campo="horasExterna">Externas</th>
-            <th class="th-ordenable" data-campo="horasInterescolar">Interescolares</th>
+            <th class="th-ordenable" data-campo="horasInterna">Internas<br><span class="text-muted small">hecho / a cumplir</span></th>
+            <th class="th-ordenable" data-campo="horasExterna">Externas<br><span class="text-muted small">hecho / a cumplir</span></th>
+            <th class="th-ordenable" data-campo="horasInterescolar">Interescolares<br><span class="text-muted small">hecho / a cumplir</span></th>
             <th>Cant. prácticas</th>
-            <th class="th-ordenable" data-campo="pct" style="min-width:160px">% cumplido</th>
+            <th class="th-ordenable" data-campo="pct" style="min-width:200px">% cumplido</th>
             <th class="th-ordenable" data-campo="faltan">Horas faltantes</th>
           </tr>
         </thead>

@@ -1716,7 +1716,52 @@ async function cargarDashboard() {
 let ultimoCalculoEstadisticas = []; // filas ya calculadas (todas, sin buscador ni orden aplicado); se recalculan solo al traer datos nuevos de Firestore
 let estadOrden = { campo: "nombre", asc: true };
 
+// Objetivo de horas a cumplir, UNO SOLO para todo el colegio (no por curso
+// ni por alumno), con un valor independiente por tipo de práctica. Se
+// guarda en Firestore en config/horasRequeridas para que lo vean todos los
+// que entren a Estadísticas. Si los tres quedan en 0 (nunca se configuró),
+// se mantiene el cálculo viejo de % cumplido (contra el total propio del
+// alumno) para no romper lo que ya había.
+let objetivoHoras = { interna: 0, externa: 0, interescolar: 0 };
+
+async function cargarObjetivoHoras() {
+  try {
+    const snap = await getDoc(doc(db, "config", "horasRequeridas"));
+    if (snap.exists()) {
+      const d = snap.data();
+      objetivoHoras = { interna: numeroHoras(d.interna), externa: numeroHoras(d.externa), interescolar: numeroHoras(d.interescolar) };
+    }
+  } catch (err) {
+    // si falla la lectura (permisos, sin conexión) seguimos con lo que había en memoria
+  }
+  const iInterna = document.getElementById("estad-obj-interna");
+  const iExterna = document.getElementById("estad-obj-externa");
+  const iInterescolar = document.getElementById("estad-obj-interescolar");
+  if (iInterna && document.activeElement !== iInterna) iInterna.value = objetivoHoras.interna || "";
+  if (iExterna && document.activeElement !== iExterna) iExterna.value = objetivoHoras.externa || "";
+  if (iInterescolar && document.activeElement !== iInterescolar) iInterescolar.value = objetivoHoras.interescolar || "";
+}
+
+document.getElementById("btn-estad-guardar-objetivo")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const interna = numeroHoras(document.getElementById("estad-obj-interna").value);
+  const externa = numeroHoras(document.getElementById("estad-obj-externa").value);
+  const interescolar = numeroHoras(document.getElementById("estad-obj-interescolar").value);
+  btn.disabled = true;
+  try {
+    await setDoc(doc(db, "config", "horasRequeridas"), { interna, externa, interescolar });
+    objetivoHoras = { interna, externa, interescolar };
+    mostrarAlerta("Objetivo de horas guardado.");
+    await cargarEstadisticas();
+  } catch (err) {
+    mostrarAlerta(`No se pudo guardar el objetivo: ${err.message || err}`, "danger");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function cargarEstadisticas() {
+  await cargarObjetivoHoras();
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = snap.docs.map(d => d.data());
@@ -1742,15 +1787,29 @@ async function cargarEstadisticas() {
     }
   });
 
-  // % cumplido: en base a lo que cada práctica cargada dice, no contra un
-  // número fijo igual para todos los alumnos. El "objetivo" de cada alumno
-  // pasa a ser el total de sus propias prácticas (realizadas + pendientes);
-  // así el % refleja exactamente cuánto de lo cargado ya se completó, y
-  // "horas faltantes" es directamente lo que tiene pendiente.
+  // % cumplido: si hay un objetivo de horas configurado (aunque sea en un
+  // solo tipo), se calcula contra ESE objetivo fijo (igual para todos los
+  // alumnos), separado por interna/externa/interescolar. "Horas faltantes"
+  // pasa a ser lo que le falta para llegar al objetivo, no lo que tiene
+  // programado. Si no hay ningún objetivo configurado (los tres en 0), se
+  // mantiene el cálculo viejo (contra el total propio del alumno), para no
+  // romper lo que ya había antes de configurar el objetivo.
+  const reqInterna = objetivoHoras.interna || 0;
+  const reqExterna = objetivoHoras.externa || 0;
+  const reqInterescolar = objetivoHoras.interescolar || 0;
+  const reqTotal = reqInterna + reqExterna + reqInterescolar;
+
   const filas = Object.values(porAlumno).map(f => {
-    const horasObjetivoPropio = f.horasRealizadas + f.horasPendientes;
-    const pct = horasObjetivoPropio > 0 ? Math.min(100, (f.horasRealizadas / horasObjetivoPropio) * 100) : 0;
-    return { ...f, pct, faltan: f.horasPendientes };
+    let pct, faltan;
+    if (reqTotal > 0) {
+      pct = (f.horasRealizadas / reqTotal) * 100;
+      faltan = Math.max(0, reqTotal - f.horasRealizadas);
+    } else {
+      const horasObjetivoPropio = f.horasRealizadas + f.horasPendientes;
+      pct = horasObjetivoPropio > 0 ? Math.min(100, (f.horasRealizadas / horasObjetivoPropio) * 100) : 0;
+      faltan = f.horasPendientes;
+    }
+    return { ...f, pct, faltan, reqInterna, reqExterna, reqInterescolar, reqTotal };
   });
   ultimoCalculoEstadisticas = filas;
 
@@ -1759,7 +1818,7 @@ async function cargarEstadisticas() {
   const totalInterna = filas.reduce((s, f) => s + f.horasInterna, 0);
   const totalExterna = filas.reduce((s, f) => s + f.horasExterna, 0);
   const totalInterescolar = filas.reduce((s, f) => s + f.horasInterescolar, 0);
-  const promedioPct = filas.length ? filas.reduce((acc, f) => acc + f.pct, 0) / filas.length : 0;
+  const promedioPct = filas.length ? filas.reduce((acc, f) => acc + Math.min(100, f.pct), 0) / filas.length : 0;
 
   document.getElementById("estad-total-alumnos").textContent = alumnos.length;
   document.getElementById("estad-promedio").textContent = `${promedioPct.toFixed(0)}%`;
@@ -1769,6 +1828,16 @@ async function cargarEstadisticas() {
   document.getElementById("estad-horas-externas").textContent = totalExterna.toFixed(1);
   const elInterescolar = document.getElementById("estad-horas-interescolar");
   if (elInterescolar) elInterescolar.textContent = totalInterescolar.toFixed(1);
+
+  // Objetivo * cantidad de alumnos, para que la tarjeta muestre "hecho /
+  // a cumplir" a nivel colegio (cada alumno individualmente debe llegar a
+  // reqInterna/reqExterna/reqInterescolar; a nivel agregado se multiplica).
+  const elObjInterna = document.getElementById("estad-obj-interna-total");
+  const elObjExterna = document.getElementById("estad-obj-externa-total");
+  const elObjInterescolar = document.getElementById("estad-obj-interescolar-total");
+  if (elObjInterna) elObjInterna.textContent = (reqInterna * alumnos.length).toFixed(1);
+  if (elObjExterna) elObjExterna.textContent = (reqExterna * alumnos.length).toFixed(1);
+  if (elObjInterescolar) elObjInterescolar.textContent = (reqInterescolar * alumnos.length).toFixed(1);
 
   renderTablaEstadisticas();
 }
@@ -1793,21 +1862,51 @@ function renderTablaEstadisticas() {
   ultimasFilasEstadisticas = filasOrdenadas;
 
   document.getElementById("tabla-estadisticas").innerHTML = filasOrdenadas.map(f => {
-    const color = f.pct >= 100 ? "bg-success" : f.pct >= 50 ? "bg-warning" : "bg-danger";
+    // Barra apilada: un segmento por tipo de práctica (gris interna, celeste
+    // externa, violeta interescolar), cada uno ocupando la proporción de
+    // horas de ESE tipo sobre el objetivo total del alumno. Si entre los
+    // tres tipos se supera el 100% (el alumno hizo más de lo pedido en
+    // algún tipo), se escalan proporcionalmente para que la barra llene
+    // como máximo el 100%, sin perder la proporción entre tipos.
+    const reqTotal = f.reqTotal;
+    let segInterna = 0, segExterna = 0, segInterescolar = 0;
+    if (reqTotal > 0) {
+      const crudoInterna = (f.horasInterna / reqTotal) * 100;
+      const crudoExterna = (f.horasExterna / reqTotal) * 100;
+      const crudoInterescolar = (f.horasInterescolar / reqTotal) * 100;
+      const suma = crudoInterna + crudoExterna + crudoInterescolar;
+      const factor = suma > 100 ? 100 / suma : 1;
+      segInterna = crudoInterna * factor;
+      segExterna = crudoExterna * factor;
+      segInterescolar = crudoInterescolar * factor;
+    } else {
+      // Sin objetivo configurado: se reparte visualmente sobre el % viejo
+      // (contra el propio total del alumno) para no dejar la barra vacía.
+      const propio = f.horasInterna + f.horasExterna + f.horasInterescolar;
+      if (propio > 0) {
+        segInterna = (f.horasInterna / propio) * f.pct;
+        segExterna = (f.horasExterna / propio) * f.pct;
+        segInterescolar = (f.horasInterescolar / propio) * f.pct;
+      }
+    }
+    const detalleTitulo = `Interna: ${f.horasInterna.toFixed(1)} / ${f.reqInterna.toFixed(1)} hs · Externa: ${f.horasExterna.toFixed(1)} / ${f.reqExterna.toFixed(1)} hs · Interescolar: ${f.horasInterescolar.toFixed(1)} / ${f.reqInterescolar.toFixed(1)} hs`;
     return `
     <tr>
       <td><a href="#" class="link-alumno-ficha" onclick="window.editarAlumno('${f.alumno.id}'); return false;">${nombreCompleto(f.alumno)}</a></td>
       <td>${f.alumno.legajo}</td>
       <td>${f.horasRealizadas.toFixed(1)}</td>
       <td>${f.horasPendientes.toFixed(1)}</td>
-      <td>${f.horasInterna.toFixed(1)}</td>
-      <td>${f.horasExterna.toFixed(1)}</td>
-      <td>${f.horasInterescolar.toFixed(1)}</td>
+      <td>${f.horasInterna.toFixed(1)} / ${f.reqInterna.toFixed(1)}</td>
+      <td>${f.horasExterna.toFixed(1)} / ${f.reqExterna.toFixed(1)}</td>
+      <td>${f.horasInterescolar.toFixed(1)} / ${f.reqInterescolar.toFixed(1)}</td>
       <td>${f.cantidad}</td>
       <td>
-        <div class="progress" style="height: 18px;">
-          <div class="progress-bar ${color}" style="width:${f.pct}%">${f.pct.toFixed(0)}%</div>
+        <div class="barra-tipos" title="${detalleTitulo}">
+          <div class="seg-interna" style="width:${segInterna}%"></div>
+          <div class="seg-externa" style="width:${segExterna}%"></div>
+          <div class="seg-interescolar" style="width:${segInterescolar}%"></div>
         </div>
+        <div class="text-muted small mt-1">${f.pct.toFixed(0)}%${reqTotal > 0 ? ` (${f.horasRealizadas.toFixed(1)} / ${reqTotal.toFixed(1)} hs)` : ""}</div>
       </td>
       <td>${f.faltan.toFixed(1)}</td>
     </tr>`;
@@ -1874,10 +1973,12 @@ document.getElementById("estad-atencion-cantidad")?.addEventListener("change", r
 
 document.getElementById("btn-estad-exportar")?.addEventListener("click", () => {
   if (!ultimasFilasEstadisticas.length) { mostrarAlerta("No hay datos para exportar.", "warning"); return; }
-  const encabezados = ["Alumno", "Legajo", "Horas realizadas", "Horas pendientes", "Internas", "Externas",
-    "Interescolares", "Cant. prácticas", "% cumplido", "Horas faltantes"];
+  const encabezados = ["Alumno", "Legajo", "Horas realizadas", "Horas pendientes",
+    "Internas realizadas", "Internas a cumplir", "Externas realizadas", "Externas a cumplir",
+    "Interescolares realizadas", "Interescolares a cumplir", "Cant. prácticas", "% cumplido", "Horas faltantes"];
   const filas = ultimasFilasEstadisticas.map(f => [nombreCompleto(f.alumno), f.alumno.legajo, f.horasRealizadas, f.horasPendientes,
-    f.horasInterna, f.horasExterna, f.horasInterescolar, f.cantidad, `${f.pct.toFixed(0)}%`, f.faltan]);
+    f.horasInterna, f.reqInterna, f.horasExterna, f.reqExterna, f.horasInterescolar, f.reqInterescolar,
+    f.cantidad, `${f.pct.toFixed(0)}%`, f.faltan]);
   exportarXLSX("estadisticas.xlsx", "Estadísticas", encabezados, filas);
 });
 
