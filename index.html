@@ -16,6 +16,11 @@
   .badge-tipo-externa { background-color: #0dcaf0; color: #000; }
   .badge-tipo-interescolar { background-color: #8e44ad; color: #fff; }
   .leyenda-tipos .badge { margin-right: .5rem; }
+  /* Encabezados de tabla ordenables (sección Estadísticas) */
+  .th-ordenable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .th-ordenable:hover { text-decoration: underline; }
+  .link-alumno-ficha { text-decoration: none; font-weight: 600; }
+  .link-alumno-ficha:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -117,13 +122,9 @@
     <!-- ---------- ESTADISTICAS ---------- -->
     <section class="vista" id="vista-estadisticas">
       <h3>Estadísticas de cumplimiento</h3>
-      <p class="text-muted">Porcentaje de práctica realizada por alumno según un objetivo de horas, y desglose por prácticas internas / externas.</p>
+      <p class="text-muted">Porcentaje de práctica realizada por alumno, calculado sobre el total de horas que ya tiene cargadas ese alumno en sus propias prácticas (realizadas + pendientes), y desglose por prácticas internas / externas / interescolares.</p>
 
-      <div class="row g-2 align-items-end mb-4 card p-3 shadow-sm" style="max-width:420px">
-        <div class="col">
-          <label class="form-label mb-0">Horas objetivo por alumno</label>
-          <input type="number" min="0" step="1" class="form-control" id="estad-objetivo" value="200">
-        </div>
+      <div class="row g-2 align-items-end mb-4">
         <div class="col-auto">
           <button class="btn btn-outline-secondary" id="btn-estad-actualizar">Actualizar</button>
         </div>
@@ -176,6 +177,33 @@
         </div>
       </div>
 
+      <div class="card p-3 shadow-sm mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h5 class="mb-0">Alumnos con menos horas realizadas (internas + externas)</h5>
+          <div class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 small text-muted">Mostrar</label>
+            <select class="form-select form-select-sm" style="width:auto" id="estad-atencion-cantidad">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="0">Todos</option>
+            </select>
+          </div>
+        </div>
+        <p class="text-muted small mb-2">No cuenta horas interescolares: pensado para detectar rápido a quién le falta arrancar o avanzar en prácticas internas/externas.</p>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Alumno</th><th>Legajo</th><th>Curso</th><th>Internas</th><th>Externas</th>
+                <th>Total int.+ext.</th><th>% cumplido</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tabla-estad-atencion"></tbody>
+          </table>
+        </div>
+      </div>
+
       <table class="table table-bordered align-middle">
         <thead>
           <tr>
@@ -187,9 +215,16 @@
             </th>
           </tr>
           <tr>
-            <th>Alumno</th><th>Legajo</th><th>Horas realizadas</th><th>Horas pendientes</th>
-            <th>Internas</th><th>Externas</th><th>Interescolares</th><th>Cant. prácticas</th>
-            <th style="min-width:160px">% cumplido</th><th>Horas faltantes</th>
+            <th class="th-ordenable" data-campo="nombre">Alumno</th>
+            <th>Legajo</th>
+            <th class="th-ordenable" data-campo="horasRealizadas">Horas realizadas</th>
+            <th class="th-ordenable" data-campo="horasPendientes">Horas pendientes</th>
+            <th class="th-ordenable" data-campo="horasInterna">Internas</th>
+            <th class="th-ordenable" data-campo="horasExterna">Externas</th>
+            <th class="th-ordenable" data-campo="horasInterescolar">Interescolares</th>
+            <th>Cant. prácticas</th>
+            <th class="th-ordenable" data-campo="pct" style="min-width:160px">% cumplido</th>
+            <th class="th-ordenable" data-campo="faltan">Horas faltantes</th>
           </tr>
         </thead>
         <tbody id="tabla-estadisticas"></tbody>

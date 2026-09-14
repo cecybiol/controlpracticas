@@ -1713,49 +1713,53 @@ async function cargarDashboard() {
 }
 
 // --------------------------------------------------------- ESTADISTICAS -
+let ultimoCalculoEstadisticas = []; // filas ya calculadas (todas, sin buscador ni orden aplicado); se recalculan solo al traer datos nuevos de Firestore
+let estadOrden = { campo: "nombre", asc: true };
+
 async function cargarEstadisticas() {
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = snap.docs.map(d => d.data());
-  const objetivo = parseFloat(document.getElementById("estad-objetivo").value || "200") || 0;
 
   const porAlumno = {};
   alumnos.forEach(a => {
     porAlumno[a.id] = { alumno: a, horasRealizadas: 0, horasPendientes: 0, horasInterna: 0, horasExterna: 0, horasInterescolar: 0, cantidad: 0 };
   });
 
-  let totalRealizadas = 0, totalPendientes = 0, totalInterna = 0, totalExterna = 0, totalInterescolar = 0;
   practicas.forEach(p => {
     const horas = numeroHoras(p.horasTotales);
     const esRealizada = p.realizada !== false; // sin dato = compatibilidad con carga manual previa
-
-    if (esRealizada) {
-      totalRealizadas += horas;
-      if (p.tipo === "externa") totalExterna += horas;
-      else if (p.tipo === "interescolar") totalInterescolar += horas;
-      else totalInterna += horas;
-    } else {
-      totalPendientes += horas;
-    }
-
     const registro = porAlumno[p.alumnoId];
-    if (registro) {
-      registro.cantidad += 1;
-      if (esRealizada) {
-        registro.horasRealizadas += horas;
-        if (p.tipo === "externa") registro.horasExterna += horas;
-        else if (p.tipo === "interescolar") registro.horasInterescolar += horas;
-        else registro.horasInterna += horas;
-      } else {
-        registro.horasPendientes += horas;
-      }
+    if (!registro) return;
+    registro.cantidad += 1;
+    if (esRealizada) {
+      registro.horasRealizadas += horas;
+      if (p.tipo === "externa") registro.horasExterna += horas;
+      else if (p.tipo === "interescolar") registro.horasInterescolar += horas;
+      else registro.horasInterna += horas;
+    } else {
+      registro.horasPendientes += horas;
     }
   });
 
-  const filas = Object.values(porAlumno);
-  const promedioPct = filas.length
-    ? filas.reduce((acc, f) => acc + (objetivo > 0 ? Math.min(100, (f.horasRealizadas / objetivo) * 100) : 0), 0) / filas.length
-    : 0;
+  // % cumplido: en base a lo que cada práctica cargada dice, no contra un
+  // número fijo igual para todos los alumnos. El "objetivo" de cada alumno
+  // pasa a ser el total de sus propias prácticas (realizadas + pendientes);
+  // así el % refleja exactamente cuánto de lo cargado ya se completó, y
+  // "horas faltantes" es directamente lo que tiene pendiente.
+  const filas = Object.values(porAlumno).map(f => {
+    const horasObjetivoPropio = f.horasRealizadas + f.horasPendientes;
+    const pct = horasObjetivoPropio > 0 ? Math.min(100, (f.horasRealizadas / horasObjetivoPropio) * 100) : 0;
+    return { ...f, pct, faltan: f.horasPendientes };
+  });
+  ultimoCalculoEstadisticas = filas;
+
+  const totalRealizadas = filas.reduce((s, f) => s + f.horasRealizadas, 0);
+  const totalPendientes = filas.reduce((s, f) => s + f.horasPendientes, 0);
+  const totalInterna = filas.reduce((s, f) => s + f.horasInterna, 0);
+  const totalExterna = filas.reduce((s, f) => s + f.horasExterna, 0);
+  const totalInterescolar = filas.reduce((s, f) => s + f.horasInterescolar, 0);
+  const promedioPct = filas.length ? filas.reduce((acc, f) => acc + f.pct, 0) / filas.length : 0;
 
   document.getElementById("estad-total-alumnos").textContent = alumnos.length;
   document.getElementById("estad-promedio").textContent = `${promedioPct.toFixed(0)}%`;
@@ -1766,54 +1770,114 @@ async function cargarEstadisticas() {
   const elInterescolar = document.getElementById("estad-horas-interescolar");
   if (elInterescolar) elInterescolar.textContent = totalInterescolar.toFixed(1);
 
-  // Buscador por alumno: solo filtra la tabla de detalle, las tarjetas de
-  // arriba siguen mostrando los totales generales.
-  const fBusqueda = document.getElementById("estad-buscar-alumno")?.value.trim().toLowerCase() || "";
-  const filasVisibles = fBusqueda
-    ? filas.filter(f => `${nombreCompleto(f.alumno)} ${f.alumno.legajo}`.toLowerCase().includes(fBusqueda))
-    : filas;
-  ultimasFilasEstadisticas = filasVisibles;
+  renderTablaEstadisticas();
+}
 
-  document.getElementById("tabla-estadisticas").innerHTML = filasVisibles
-    .sort((a, b) => nombreCompleto(a.alumno).localeCompare(nombreCompleto(b.alumno)))
-    .map(f => {
-      const pct = objetivo > 0 ? Math.min(100, (f.horasRealizadas / objetivo) * 100) : 0;
-      const faltan = Math.max(0, objetivo - f.horasRealizadas);
-      const color = pct >= 100 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-danger";
-      return `
-      <tr>
-        <td>${nombreCompleto(f.alumno)}</td>
-        <td>${f.alumno.legajo}</td>
-        <td>${f.horasRealizadas.toFixed(1)}</td>
-        <td>${f.horasPendientes.toFixed(1)}</td>
-        <td>${f.horasInterna.toFixed(1)}</td>
-        <td>${f.horasExterna.toFixed(1)}</td>
-        <td>${f.horasInterescolar.toFixed(1)}</td>
-        <td>${f.cantidad}</td>
-        <td>
-          <div class="progress" style="height: 18px;">
-            <div class="progress-bar ${color}" style="width:${pct}%">${pct.toFixed(0)}%</div>
-          </div>
-        </td>
-        <td>${faltan.toFixed(1)}</td>
-      </tr>`;
-    }).join("") || `<tr><td colspan="10" class="text-muted">No se encontraron alumnos con ese criterio.</td></tr>`;
+// Aplica buscador + orden sobre lo YA calculado (sin volver a pedirle nada
+// a Firestore) y renderiza tanto la tabla principal como la de "menos
+// horas". Deja ultimasFilasEstadisticas lista para el botón de Exportar.
+function renderTablaEstadisticas() {
+  const fBusqueda = document.getElementById("estad-buscar-alumno")?.value.trim().toLowerCase() || "";
+  const filasFiltradas = fBusqueda
+    ? ultimoCalculoEstadisticas.filter(f => `${nombreCompleto(f.alumno)} ${f.alumno.legajo}`.toLowerCase().includes(fBusqueda))
+    : ultimoCalculoEstadisticas;
+
+  const { campo, asc } = estadOrden;
+  const valorOrden = (f) => (campo === "nombre" ? nombreCompleto(f.alumno).toLowerCase() : f[campo]);
+  const filasOrdenadas = [...filasFiltradas].sort((a, b) => {
+    const va = valorOrden(a), vb = valorOrden(b);
+    let cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
+    if (cmp === 0) cmp = nombreCompleto(a.alumno).localeCompare(nombreCompleto(b.alumno));
+    return asc ? cmp : -cmp;
+  });
+  ultimasFilasEstadisticas = filasOrdenadas;
+
+  document.getElementById("tabla-estadisticas").innerHTML = filasOrdenadas.map(f => {
+    const color = f.pct >= 100 ? "bg-success" : f.pct >= 50 ? "bg-warning" : "bg-danger";
+    return `
+    <tr>
+      <td><a href="#" class="link-alumno-ficha" onclick="window.editarAlumno('${f.alumno.id}'); return false;">${nombreCompleto(f.alumno)}</a></td>
+      <td>${f.alumno.legajo}</td>
+      <td>${f.horasRealizadas.toFixed(1)}</td>
+      <td>${f.horasPendientes.toFixed(1)}</td>
+      <td>${f.horasInterna.toFixed(1)}</td>
+      <td>${f.horasExterna.toFixed(1)}</td>
+      <td>${f.horasInterescolar.toFixed(1)}</td>
+      <td>${f.cantidad}</td>
+      <td>
+        <div class="progress" style="height: 18px;">
+          <div class="progress-bar ${color}" style="width:${f.pct}%">${f.pct.toFixed(0)}%</div>
+        </div>
+      </td>
+      <td>${f.faltan.toFixed(1)}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="10" class="text-muted">No se encontraron alumnos con ese criterio.</td></tr>`;
+
+  actualizarIndicadoresOrdenEstadisticas();
+  renderTablaAtencion();
+}
+
+// Pinta una flechita en el encabezado por el que se está ordenando ahora.
+function actualizarIndicadoresOrdenEstadisticas() {
+  document.querySelectorAll("#vista-estadisticas .th-ordenable").forEach(th => {
+    if (!th.dataset.label) th.dataset.label = th.textContent.trim();
+    const base = th.dataset.label;
+    th.textContent = th.dataset.campo === estadOrden.campo ? `${base} ${estadOrden.asc ? "▲" : "▼"}` : base;
+  });
+}
+
+document.querySelectorAll("#vista-estadisticas .th-ordenable").forEach(th => {
+  th.addEventListener("click", () => {
+    const campo = th.dataset.campo;
+    if (estadOrden.campo === campo) estadOrden.asc = !estadOrden.asc;
+    else { estadOrden.campo = campo; estadOrden.asc = true; }
+    renderTablaEstadisticas();
+  });
+});
+
+// Alumnos con menos horas realizadas de prácticas internas + externas (no
+// cuenta interescolares): para detectar de un vistazo a quién hay que
+// hacerle seguimiento porque no arrancó o le falta avanzar. Desde acá
+// también se puede abrir la ficha del alumno para ver sus prácticas.
+function renderTablaAtencion() {
+  const tbody = document.getElementById("tabla-estad-atencion");
+  if (!tbody) return;
+  const cantidadSel = document.getElementById("estad-atencion-cantidad");
+  const cantidad = cantidadSel ? parseInt(cantidadSel.value, 10) || 0 : 10;
+
+  const ordenadosPorMenosHoras = [...ultimoCalculoEstadisticas].sort((a, b) => {
+    const ha = a.horasInterna + a.horasExterna, hb = b.horasInterna + b.horasExterna;
+    if (ha !== hb) return ha - hb;
+    return nombreCompleto(a.alumno).localeCompare(nombreCompleto(b.alumno));
+  });
+  const lista = cantidad > 0 ? ordenadosPorMenosHoras.slice(0, cantidad) : ordenadosPorMenosHoras;
+
+  tbody.innerHTML = lista.map(f => {
+    const total = f.horasInterna + f.horasExterna;
+    return `
+    <tr>
+      <td><a href="#" class="link-alumno-ficha" onclick="window.editarAlumno('${f.alumno.id}'); return false;">${nombreCompleto(f.alumno)}</a></td>
+      <td>${f.alumno.legajo}</td>
+      <td>${f.alumno.curso || ""}</td>
+      <td>${f.horasInterna.toFixed(1)}</td>
+      <td>${f.horasExterna.toFixed(1)}</td>
+      <td>${total.toFixed(1)}</td>
+      <td>${f.pct.toFixed(0)}%</td>
+      <td><button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.editarAlumno('${f.alumno.id}')">Ver ficha</button></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="8" class="text-muted">No hay alumnos para mostrar.</td></tr>`;
 }
 
 document.getElementById("btn-estad-actualizar").addEventListener("click", cargarEstadisticas);
-document.getElementById("estad-buscar-alumno")?.addEventListener("input", cargarEstadisticas);
+document.getElementById("estad-buscar-alumno")?.addEventListener("input", renderTablaEstadisticas);
+document.getElementById("estad-atencion-cantidad")?.addEventListener("change", renderTablaAtencion);
 
 document.getElementById("btn-estad-exportar")?.addEventListener("click", () => {
   if (!ultimasFilasEstadisticas.length) { mostrarAlerta("No hay datos para exportar.", "warning"); return; }
-  const objetivo = parseFloat(document.getElementById("estad-objetivo").value || "200") || 0;
   const encabezados = ["Alumno", "Legajo", "Horas realizadas", "Horas pendientes", "Internas", "Externas",
     "Interescolares", "Cant. prácticas", "% cumplido", "Horas faltantes"];
-  const filas = ultimasFilasEstadisticas.map(f => {
-    const pct = objetivo > 0 ? Math.min(100, (f.horasRealizadas / objetivo) * 100) : 0;
-    const faltan = Math.max(0, objetivo - f.horasRealizadas);
-    return [nombreCompleto(f.alumno), f.alumno.legajo, f.horasRealizadas, f.horasPendientes,
-      f.horasInterna, f.horasExterna, f.horasInterescolar, f.cantidad, `${pct.toFixed(0)}%`, faltan];
-  });
+  const filas = ultimasFilasEstadisticas.map(f => [nombreCompleto(f.alumno), f.alumno.legajo, f.horasRealizadas, f.horasPendientes,
+    f.horasInterna, f.horasExterna, f.horasInterescolar, f.cantidad, `${f.pct.toFixed(0)}%`, f.faltan]);
   exportarXLSX("estadisticas.xlsx", "Estadísticas", encabezados, filas);
 });
 
