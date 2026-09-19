@@ -1954,51 +1954,126 @@ async function cargarMiPractica() {
   document.getElementById("tabla-mi-asistencia").innerHTML = asistencias.map(r=>`<tr><td>${fmtFecha(r.fecha)}</td><td>${escaparHTML(r.lugar||"")}</td><td>${escaparHTML(ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"))}</td><td>${escaparHTML(`${r.horaEntrada||""} - ${r.horaSalida||""}`)}</td><td>${escaparHTML(r.observaciones||"")}</td></tr>`).join("") || `<tr><td colspan="5">Sin registros de asistencia.</td></tr>`;
 }
 
-function abrirInformePDF(alumnoId) {
-  if (!alumnoId) { mostrarAlerta("No hay un alumno vinculado para generar el informe.", "warning"); return; }
+let alumnosDisponiblesInformePDF = [];
+let practicasDisponiblesInformePDF = [];
+let alumnosSeleccionadosPDFSet = new Set();
+
+function alumnosSeleccionadosInformePDF() {
+  return [...alumnosSeleccionadosPDFSet];
+}
+
+function renderAlumnosInformePDF() {
+  const filtro = document.getElementById("pdf-buscar-alumno").value.trim().toLowerCase();
+  const seleccionados = new Set(alumnosSeleccionadosInformePDF());
+  const visibles = alumnosDisponiblesInformePDF.filter(a => !filtro || `${nombreCompleto(a)} ${a.legajo}`.toLowerCase().includes(filtro));
+  document.getElementById("pdf-alumnos-selector").innerHTML = visibles.map(a=>`<label><input type="checkbox" value="${a.id}" ${seleccionados.has(a.id)?"checked":""}> <span>${escaparHTML(nombreCompleto(a))} · ${escaparHTML(a.legajo)}</span></label>`).join("") || `<span class="text-muted small">No se encontraron alumnos.</span>`;
+  document.getElementById("pdf-alumnos-contador").textContent = `${seleccionados.size} alumno(s) seleccionado(s)`;
+  document.getElementById("pdf-seleccionar-todos").checked = visibles.length > 0 && visibles.every(a=>seleccionados.has(a.id));
+}
+
+function actualizarAlcanceInformePDF() {
+  const seleccionados = new Set(alumnosSeleccionadosInformePDF());
+  const base = practicasDisponiblesInformePDF.filter(p=>!seleccionados.size || seleccionados.has(p.alumnoId));
+  const crearOpciones = (valores, texto, actual) => `<option value="">${texto}</option>` + [...new Set(valores.filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b)).map(v=>`<option value="${escaparHTML(v)}" ${v===actual?"selected":""}>${escaparHTML(v)}</option>`).join("");
+  const lugar = document.getElementById("pdf-filtro-lugar"), sector = document.getElementById("pdf-filtro-sector");
+  lugar.innerHTML = crearOpciones(base.map(p=>p.lugar), "Todos los lugares", lugar.value);
+  sector.innerHTML = crearOpciones(base.map(p=>p.sector), "Todos los sectores", sector.value);
+  document.getElementById("pdf-alumnos-contador").textContent = `${seleccionados.size} alumno(s) seleccionado(s)`;
+}
+
+async function abrirInformePDF(alumnoId = "") {
+  if (usuarioActual?.rol === "alumno" && !alumnoId) alumnoId = usuarioActual.alumnoId || "";
   document.getElementById("pdf-alumno-id").value = alumnoId;
   const devolucion = document.getElementById("pdf-devolucion");
   devolucion.value = ""; devolucion.disabled = usuarioActual?.rol === "alumno";
   devolucion.placeholder = usuarioActual?.rol === "alumno" ? "La devolución la completa el equipo docente." : "Escribí aquí la devolución para el alumno...";
-  abrirModal("modal-informe-pdf");
+  try {
+    const [alumnos, practicas] = await Promise.all([obtenerAlumnos(), obtenerPracticas()]);
+    alumnosDisponiblesInformePDF = usuarioActual?.rol === "alumno" ? alumnos.filter(a=>a.id===alumnoId) : alumnos;
+    practicasDisponiblesInformePDF = practicas.filter(p=>practicaRealizada(p) && alumnosDisponiblesInformePDF.some(a=>a.id===p.alumnoId));
+    alumnosSeleccionadosPDFSet = new Set(alumnoId ? [alumnoId] : []);
+    document.getElementById("pdf-buscar-alumno").value = "";
+    document.getElementById("pdf-alumnos-selector").innerHTML = alumnosDisponiblesInformePDF.map(a=>`<label><input type="checkbox" value="${a.id}" ${a.id===alumnoId?"checked":""}> <span>${escaparHTML(nombreCompleto(a))} · ${escaparHTML(a.legajo)}</span></label>`).join("");
+    document.getElementById("pdf-filtro-tipo").value = "";
+    document.getElementById("pdf-filtro-lugar").value = "";
+    document.getElementById("pdf-filtro-sector").value = "";
+    renderAlumnosInformePDF(); actualizarAlcanceInformePDF();
+    abrirModal("modal-informe-pdf");
+  } catch (err) {
+    mostrarAlerta("No se pudieron cargar los filtros del informe.", "danger");
+  }
 }
 document.getElementById("btn-informe-pdf-alumno").addEventListener("click", () => abrirInformePDF(document.getElementById("alumno-id").value));
 document.getElementById("btn-mi-informe-pdf").addEventListener("click", () => abrirInformePDF(usuarioActual?.alumnoId));
+document.getElementById("btn-abrir-generador-pdf").addEventListener("click", () => abrirInformePDF());
+document.getElementById("pdf-buscar-alumno").addEventListener("input", renderAlumnosInformePDF);
+document.getElementById("pdf-alumnos-selector").addEventListener("change", e => {
+  if (e.target.matches("input[type=checkbox]")) e.target.checked ? alumnosSeleccionadosPDFSet.add(e.target.value) : alumnosSeleccionadosPDFSet.delete(e.target.value);
+  renderAlumnosInformePDF(); actualizarAlcanceInformePDF();
+});
+document.getElementById("pdf-seleccionar-todos").addEventListener("change", e => {
+  const filtro=document.getElementById("pdf-buscar-alumno").value.trim().toLowerCase();
+  alumnosDisponiblesInformePDF.filter(a=>!filtro||`${nombreCompleto(a)} ${a.legajo}`.toLowerCase().includes(filtro)).forEach(a=>e.target.checked?alumnosSeleccionadosPDFSet.add(a.id):alumnosSeleccionadosPDFSet.delete(a.id));
+  renderAlumnosInformePDF(); actualizarAlcanceInformePDF();
+});
 
 async function imagenADataURL(url) {
   const blob = await (await fetch(url)).blob();
   return await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
 }
 document.getElementById("btn-generar-pdf").addEventListener("click", async () => {
-  const alumnoId = document.getElementById("pdf-alumno-id").value;
+  const alumnoIds = alumnosSeleccionadosInformePDF();
   const opciones = new Set([...document.querySelectorAll("#pdf-opciones input:checked")].map(x=>x.value));
+  const filtroTipo = document.getElementById("pdf-filtro-tipo").value;
+  const filtroLugar = document.getElementById("pdf-filtro-lugar").value;
+  const filtroSector = document.getElementById("pdf-filtro-sector").value;
+  if (!alumnoIds.length) { mostrarAlerta("Seleccioná al menos un alumno.", "warning"); return; }
   if (!opciones.size) { mostrarAlerta("Seleccioná al menos una sección.", "warning"); return; }
   if (!window.jspdf?.jsPDF) { mostrarAlerta("No se cargó el generador PDF. Recargá la página.", "danger"); return; }
   const btn = document.getElementById("btn-generar-pdf"); btn.disabled = true;
   try {
-    const [snapA, practicas, snapAsist, snapInformes] = await Promise.all([
-      getDoc(doc(db,"alumnos",alumnoId)), getDocs(query(collection(db,"practicas"),where("alumnoId","==",alumnoId))),
-      getDocs(query(collection(db,"asistencias"),where("alumnoId","==",alumnoId))),
-      getDocs(query(collection(db,"informes"),where("alumnoId","==",alumnoId))),
-    ]);
-    if (!snapA.exists()) throw new Error("Alumno no encontrado.");
-    const a={id:snapA.id,...snapA.data()}, propias=practicas.docs.map(d=>({id:d.id,...d.data()})), asist=snapAsist.docs.map(d=>d.data()), informes=snapInformes.docs.map(d=>d.data());
+    const datosAlumnos = await Promise.all(alumnoIds.map(async alumnoId => {
+      const [snapA, practicas, snapAsist, snapInformes] = await Promise.all([
+        getDoc(doc(db,"alumnos",alumnoId)), getDocs(query(collection(db,"practicas"),where("alumnoId","==",alumnoId))),
+        getDocs(query(collection(db,"asistencias"),where("alumnoId","==",alumnoId))),
+        getDocs(query(collection(db,"informes"),where("alumnoId","==",alumnoId))),
+      ]);
+      if (!snapA.exists()) return null;
+      return { a:{id:snapA.id,...snapA.data()}, propias:practicas.docs.map(d=>({id:d.id,...d.data()})), asist:snapAsist.docs.map(d=>d.data()), informes:snapInformes.docs.map(d=>d.data()) };
+    }));
+    const validos = datosAlumnos.filter(Boolean);
+    if (!validos.length) throw new Error("No se encontraron los alumnos seleccionados.");
+    const seccionesDePractica = ["horas","practicas","inasistencias","tardanzas","informes"].some(x=>opciones.has(x));
     const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:"mm",format:"a4"});
     if (typeof pdf.autoTable !== "function") throw new Error("No se cargó el componente de tablas PDF. Recargá la página e intentá nuevamente.");
     const logo = await imagenADataURL("img/guemes.png").catch(()=>"");
     const encabezado = () => { if(logo) pdf.addImage(logo,"PNG",12,8,22,22); pdf.setTextColor(7,84,127); pdf.setFontSize(15); pdf.text("Escuela Técnica N.° 10",40,15); pdf.setFontSize(11); pdf.text("Prácticas Profesionalizantes",40,22); pdf.setDrawColor(5,143,208); pdf.line(12,33,198,33); };
-    encabezado(); let y=40;
-    pdf.setTextColor(30); pdf.setFontSize(14); pdf.text(`Informe de ${nombreCompleto(a)}`,12,y); y+=7;
-    const tabla = (titulo, head, body) => { const filas = body.length ? body : [head.map((_,i)=>i===0?"Sin registros":"")]; pdf.setFontSize(11); pdf.setTextColor(165,48,43); pdf.text(titulo,12,y); y+=2; pdf.autoTable({startY:y,head:[head],body:filas,theme:"grid",headStyles:{fillColor:[5,143,208]},styles:{fontSize:8},margin:{left:12,right:12,top:38},didDrawPage:()=>{if(pdf.internal.getNumberOfPages()>1) encabezado();}}); y=pdf.lastAutoTable.finalY+8; if(y>265){pdf.addPage(); encabezado(); y=40;} };
-    if(opciones.has("datos")) tabla("Datos personales",["Dato","Información"],[["Legajo",a.legajo||""],["Curso / división",a.curso||""],["Sector / carrera",a.sector||""],["Email",a.email||""],["Teléfono",a.telefono||""]]);
-    if(opciones.has("horas")){const por={};propias.filter(practicaRealizada).forEach(p=>por[p.sector||"Sin sector"]=(por[p.sector||"Sin sector"]||0)+numeroHoras(p.horasTotales));tabla("Horas realizadas por sector",["Sector","Horas"],Object.entries(por).map(([s,h])=>[s,h.toFixed(1)]));}
-    if(opciones.has("practicas")) tabla("Prácticas realizadas",["Período","Lugar","Sector","Estado","Horas"],propias.filter(practicaRealizada).map(p=>[fmtRangoFechas(p),p.lugar||"",p.sector||"",estadoPractica(p).replace("_"," "),numeroHoras(p.horasTotales).toFixed(1)]));
-    if(opciones.has("inasistencias")) tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asist.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)||(!r.estado&&r.presente===false)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado]||"Ausente injustificado",r.observaciones||""]));
-    if(opciones.has("tardanzas")) tabla("Tardanzas",["Fecha","Lugar","Horario","Observación"],asist.filter(r=>r.estado==="tardanza").map(r=>[fmtFecha(r.fecha),r.lugar||"",`${r.horaEntrada||""}-${r.horaSalida||""}`,r.observaciones||""]));
-    if(opciones.has("informes")) tabla("Informes presentados",["Fecha","Título","Estado","Observación"],informes.filter(i=>i.estado!=="pendiente").map(i=>[fmtFecha(i.fechaPresentacion||i.fecha),i.titulo||"",i.estado||"",i.observaciones||""]));
-    const devolucion=document.getElementById("pdf-devolucion").value.trim(); if(opciones.has("devolucion")) tabla("Devolución / observaciones docentes",["Observación"],[[devolucion||"Sin observaciones docentes."]]);
+    const alcance = `Tipo: ${filtroTipo ? infoTipo(filtroTipo).label : "Todos"} · Lugar: ${filtroLugar||"Todos"} · Sector: ${filtroSector||"Todos"}`;
+    let incluidos=0;
+    for (const {a, propias, asist, informes} of validos) {
+      const propiasFiltradas = propias.filter(practicaRealizada).filter(p=>(!filtroTipo||normalizarTipo(p.tipo)===filtroTipo)&&(!filtroLugar||p.lugar===filtroLugar)&&(!filtroSector||p.sector===filtroSector));
+      if (seccionesDePractica && !propiasFiltradas.length) continue;
+      if (incluidos++) pdf.addPage();
+      const idsPracticas=new Set(propiasFiltradas.map(p=>p.id));
+      const asistFiltrada=asist.filter(r=>r.practicaId?idsPracticas.has(r.practicaId):propiasFiltradas.some(p=>normalizarTexto(r.lugar||"")===normalizarTexto(p.lugar||"")&&(!r.tipo||normalizarTipo(r.tipo)===normalizarTipo(p.tipo))&&r.fecha>=p.fecha&&r.fecha<=(p.fechaFin||p.fecha)));
+      const informesFiltrados=informes.filter(i=>i.practicaId&&idsPracticas.has(i.practicaId));
+      const mapaPracticas=Object.fromEntries(propiasFiltradas.map(p=>[p.id,p]));
+      encabezado(); let y=40;
+      pdf.setTextColor(30);pdf.setFontSize(14);pdf.text(`Informe de ${nombreCompleto(a)}`,12,y);y+=6;
+      pdf.setFontSize(8);pdf.setTextColor(80);const lineasAlcance=pdf.splitTextToSize(alcance,184);pdf.text(lineasAlcance,12,y);y+=lineasAlcance.length*4+3;
+      const tabla=(titulo,head,body)=>{const filas=body.length?body:[head.map((_,i)=>i===0?"Sin registros":"")];pdf.setFontSize(11);pdf.setTextColor(165,48,43);pdf.text(titulo,12,y);y+=2;pdf.autoTable({startY:y,head:[head],body:filas,theme:"grid",headStyles:{fillColor:[5,143,208]},styles:{fontSize:8},margin:{left:12,right:12,top:38},didDrawPage:d=>{if(d.pageNumber>1)encabezado();}});y=pdf.lastAutoTable.finalY+8;if(y>265){pdf.addPage();encabezado();y=40;}};
+      if(opciones.has("datos"))tabla("Datos personales",["Dato","Información"],[["Legajo",a.legajo||""],["Curso / división",a.curso||""],["Sector / carrera",a.sector||""],["Email",a.email||""],["Teléfono",a.telefono||""]]);
+      if(opciones.has("horas")){const por={};propiasFiltradas.forEach(p=>por[p.sector||"Sin sector"]=(por[p.sector||"Sin sector"]||0)+numeroHoras(p.horasTotales));tabla("Horas realizadas por sector",["Sector","Horas"],Object.entries(por).map(([s,h])=>[s,h.toFixed(1)]));}
+      if(opciones.has("practicas"))tabla("Prácticas realizadas",["Período","Tipo","Lugar","Sector","Horas"],propiasFiltradas.map(p=>[fmtRangoFechas(p),infoTipo(p.tipo).label,p.lugar||"",p.sector||"",numeroHoras(p.horasTotales).toFixed(1)]));
+      if(opciones.has("inasistencias"))tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asistFiltrada.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)||(!r.estado&&r.presente===false)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado]||"Ausente injustificado",r.observaciones||""]));
+      if(opciones.has("tardanzas"))tabla("Tardanzas",["Fecha","Lugar","Horario","Observación"],asistFiltrada.filter(r=>r.estado==="tardanza").map(r=>[fmtFecha(r.fecha),r.lugar||"",`${r.horaEntrada||""}-${r.horaSalida||""}`,r.observaciones||""]));
+      if(opciones.has("informes"))tabla("Informes presentados",["Fecha","Título","Práctica","Estado","Observación"],informesFiltrados.filter(i=>i.estado!=="pendiente").map(i=>{const p=mapaPracticas[i.practicaId];return[fmtFecha(i.fechaPresentacion||i.fecha),i.titulo||"",p?`${p.lugar} (${fmtRangoFechas(p)})`:"",i.estado||"",i.observaciones||""];}));
+      const devolucion=document.getElementById("pdf-devolucion").value.trim();if(opciones.has("devolucion"))tabla("Devolución / observaciones docentes",["Observación"],[[devolucion||"Sin observaciones docentes."]]);
+    }
+    if(!incluidos)throw new Error("Ningún alumno seleccionado tiene prácticas realizadas que coincidan con el alcance elegido.");
     const paginas=pdf.internal.getNumberOfPages();for(let i=1;i<=paginas;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(100);pdf.text(`Generado ${new Date().toLocaleDateString("es-AR")} · Página ${i} de ${paginas}`,105,291,{align:"center"});}
-    pdf.save(`informe_${String(a.apellido||"alumno").replace(/\s+/g,"_")}_${hoyISO()}.pdf`); cerrarModal("modal-informe-pdf");
+    pdf.save(`${incluidos===1?"informe_alumno":"informes_alumnos"}_${hoyISO()}.pdf`); cerrarModal("modal-informe-pdf");
   } catch(err){mostrarAlerta(err.message||"No se pudo generar el PDF.","danger");} finally{btn.disabled=false;}
 });
 
@@ -2298,25 +2373,30 @@ document.querySelectorAll("#vista-estadisticas .th-ordenable").forEach(th => {
   });
 });
 
-// Alumnos con menos horas realizadas de prácticas internas + externas (no
-// cuenta interescolares): para detectar de un vistazo a quién hay que
-// hacerle seguimiento porque no arrancó o le falta avanzar. Desde acá
-// también se puede abrir la ficha del alumno para ver sus prácticas.
+// Alumnos con menos horas realizadas según el tipo elegido: permite revisar
+// por separado internas, externas, interescolares o el total de las tres.
 function renderTablaAtencion() {
   const tbody = document.getElementById("tabla-estad-atencion");
   if (!tbody) return;
   const cantidadSel = document.getElementById("estad-atencion-cantidad");
   const cantidad = cantidadSel ? parseInt(cantidadSel.value, 10) || 0 : 10;
+  const tipo = document.getElementById("estad-atencion-tipo")?.value || "todas";
+  const horasTipo = f => tipo === "interna" ? f.horasInterna : tipo === "externa" ? f.horasExterna : tipo === "interescolar" ? f.horasInterescolar : f.horasRealizadas;
+  const objetivoTipo = f => tipo === "interna" ? f.reqInterna : tipo === "externa" ? f.reqExterna : tipo === "interescolar" ? f.reqInterescolar : f.reqTotal;
+  const etiqueta = { todas:"Todas", interna:"Internas", externa:"Externas", interescolar:"Interescolares" }[tipo];
+  document.getElementById("estad-atencion-columna").textContent = `Horas: ${etiqueta}`;
+  document.getElementById("estad-atencion-ayuda").textContent = `Ordenado de menor a mayor por horas ${etiqueta.toLowerCase()}. Solo se contabilizan prácticas realizadas.`;
 
   const ordenadosPorMenosHoras = [...ultimoCalculoEstadisticas].sort((a, b) => {
-    const ha = a.horasInterna + a.horasExterna, hb = b.horasInterna + b.horasExterna;
+    const ha = horasTipo(a), hb = horasTipo(b);
     if (ha !== hb) return ha - hb;
     return nombreCompleto(a.alumno).localeCompare(nombreCompleto(b.alumno));
   });
   const lista = cantidad > 0 ? ordenadosPorMenosHoras.slice(0, cantidad) : ordenadosPorMenosHoras;
 
   tbody.innerHTML = lista.map(f => {
-    const total = f.horasInterna + f.horasExterna;
+    const horas = horasTipo(f), objetivo = objetivoTipo(f);
+    const pct = objetivo > 0 ? Math.min(100, (horas / objetivo) * 100) : null;
     return `
     <tr>
       <td><a href="#" class="link-alumno-ficha" onclick="window.editarAlumno('${f.alumno.id}'); return false;">${nombreCompleto(f.alumno)}</a></td>
@@ -2324,16 +2404,18 @@ function renderTablaAtencion() {
       <td>${f.alumno.curso || ""}</td>
       <td>${f.horasInterna.toFixed(1)}</td>
       <td>${f.horasExterna.toFixed(1)}</td>
-      <td>${total.toFixed(1)}</td>
-      <td>${f.pct.toFixed(0)}%</td>
+      <td>${f.horasInterescolar.toFixed(1)}</td>
+      <td><strong>${horas.toFixed(1)}</strong></td>
+      <td>${pct === null ? "Sin objetivo" : `${pct.toFixed(0)}%`}</td>
       <td><button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.editarAlumno('${f.alumno.id}')">Ver ficha</button></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="8" class="text-muted">No hay alumnos para mostrar.</td></tr>`;
+  }).join("") || `<tr><td colspan="9" class="text-muted">No hay alumnos para mostrar.</td></tr>`;
 }
 
 document.getElementById("btn-estad-actualizar").addEventListener("click", cargarEstadisticas);
 document.getElementById("estad-buscar-alumno")?.addEventListener("input", renderTablaEstadisticas);
 document.getElementById("estad-atencion-cantidad")?.addEventListener("change", renderTablaAtencion);
+document.getElementById("estad-atencion-tipo")?.addEventListener("change", renderTablaAtencion);
 
 document.getElementById("btn-estad-exportar")?.addEventListener("click", () => {
   if (!ultimasFilasEstadisticas.length) { mostrarAlerta("No hay datos para exportar.", "warning"); return; }
