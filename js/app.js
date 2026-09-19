@@ -30,6 +30,7 @@ let ultimosResumenPracticas = []; // grupos calculados por cargarResumenPractica
 let ultimosArchivosDrive = []; // últimos resultados de la tabla "Buscar en Drive", para saber qué archivos quedaron tildados
 let filasRegistrarDrive = []; // filas del modal "Registrar informes desde Drive", con el archivo original de cada una
 let ultimosGruposDuplicados = null; // { grupos, practicas, asistencias, faltas } calculado por cargarDuplicados, para que window.fusionarGrupo no tenga que volver a pedirle todo a Firestore
+let ultimosGruposCorrelativos = null; // prácticas de jornadas consecutivas listas para agrupar por semana
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -254,7 +255,7 @@ function cargarVista(nombre) {
     usuarios: cargarUsuarios,
     drive: () => {},
     importar: () => {},
-    duplicados: cargarDuplicados,
+    duplicados: cargarOptimizacion,
     configuracion: cargarConfiguracion,
     "mi-practica": cargarMiPractica,
   };
@@ -471,7 +472,7 @@ async function cargarAlumnos() {
   const fCurso = document.getElementById("alumno-filtro-curso").value.trim().toLowerCase();
 
   const filtrados = alumnos.filter(a => {
-    if (fTexto && !(`${nombreCompleto(a)} ${a.legajo} ${a.sector || ""}`.toLowerCase().includes(fTexto))) return false;
+    if (fTexto && !(`${nombreCompleto(a)} ${a.legajo} ${a.telefono || ""} ${a.sector || ""}`.toLowerCase().includes(fTexto))) return false;
     if (fCurso && !(a.curso || "").toLowerCase().includes(fCurso)) return false;
     return true;
   });
@@ -483,12 +484,12 @@ async function cargarAlumnos() {
   document.getElementById("tabla-alumnos").innerHTML = filtrados.map(a => `
     <tr>
       <td><input type="checkbox" class="chk-alumno" value="${a.id}"></td>
-      <td>${a.legajo}</td><td>${nombreCompleto(a)}</td><td>${a.curso || ""}</td><td>${a.sector || ""}</td><td>${a.email || ""}</td>
+      <td>${a.legajo}</td><td>${nombreCompleto(a)}</td><td>${a.curso || ""}</td><td>${a.sector || ""}</td><td>${a.email || ""}</td><td>${escaparHTML(a.telefono || "")}</td>
       <td>
         <button class="btn btn-sm btn-outline-secondary" onclick="window.editarAlumno('${a.id}')">Ficha / Editar</button>
         <button class="btn btn-sm btn-outline-danger" onclick="window.eliminarAlumno('${a.id}')">Eliminar</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="7" class="text-muted">No hay alumnos cargados.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="8" class="text-muted">No hay alumnos cargados.</td></tr>`;
 }
 
 document.getElementById("chk-todos-alumnos")?.addEventListener("change", (e) => {
@@ -523,8 +524,8 @@ document.getElementById("btn-eliminar-alumnos-masivo")?.addEventListener("click"
 
 document.getElementById("btn-exportar-alumnos")?.addEventListener("click", () => {
   if (!ultimosAlumnosFiltrados.length) { mostrarAlerta("No hay alumnos para exportar.", "warning"); return; }
-  const encabezados = ["Legajo", "Apellido", "Nombre", "Curso / división", "Sector / carrera", "Email"];
-  const filas = ultimosAlumnosFiltrados.map(a => [a.legajo, a.apellido, a.nombre, a.curso || "", a.sector || "", a.email || ""]);
+  const encabezados = ["Legajo", "Apellido", "Nombre", "Curso / división", "Sector / carrera", "Email", "Teléfono"];
+  const filas = ultimosAlumnosFiltrados.map(a => [a.legajo, a.apellido, a.nombre, a.curso || "", a.sector || "", a.email || "", a.telefono || ""]);
   exportarXLSX("alumnos.xlsx", "Alumnos", encabezados, filas);
 });
 
@@ -571,6 +572,7 @@ window.editarAlumno = async (id) => {
   document.getElementById("alumno-nombre").value = a.nombre;
   document.getElementById("alumno-apellido").value = a.apellido;
   document.getElementById("alumno-email").value = a.email || "";
+  document.getElementById("alumno-telefono").value = a.telefono || "";
   document.getElementById("alumno-sector").value = a.sector || "";
   document.getElementById("alumno-curso").value = a.curso || "";
   document.getElementById("modal-alumno-titulo").textContent = `Ficha de ${nombreCompleto(a)}`;
@@ -635,6 +637,7 @@ document.getElementById("form-alumno").addEventListener("submit", async (e) => {
     nombre: document.getElementById("alumno-nombre").value.trim(),
     apellido: document.getElementById("alumno-apellido").value.trim(),
     email: document.getElementById("alumno-email").value.trim(),
+    telefono: document.getElementById("alumno-telefono").value.trim(),
     sector: document.getElementById("alumno-sector").value.trim(),
     curso: document.getElementById("alumno-curso").value.trim(),
   };
@@ -1007,18 +1010,18 @@ window.eliminarPractica = async (id, desdeFicha = false) => {
 
 // --------------------------------------------------------------- INFORMES
 // Llena el combo "Práctica correspondiente" del modal de informe con las
-// prácticas de ESE alumno en particular (para poder vincular el informe a
+// prácticas realizadas de ESE alumno en particular (para poder vincular el informe a
 // la práctica que corresponde y que después aparezca en "Resumen por
-// práctica"). Si no hay alumno seleccionado, deja solo la opción "Sin vincular".
+// práctica"). Si no hay alumno seleccionado, deja solo la opción inicial.
 async function llenarSelectPracticaDeInforme(alumnoId, seleccionadaId = "") {
   const sel = document.getElementById("informe-practica");
   if (!alumnoId) {
-    sel.innerHTML = `<option value="">Sin vincular a una práctica</option>`;
+    sel.innerHTML = `<option value="">Seleccionar práctica realizada</option>`;
     return;
   }
   const practicas = await obtenerPracticas();
-  const propias = practicas.filter(p => p.alumnoId === alumnoId);
-  sel.innerHTML = `<option value="">Sin vincular a una práctica</option>` +
+  const propias = practicas.filter(p => p.alumnoId === alumnoId && practicaRealizada(p));
+  sel.innerHTML = `<option value="">Seleccionar práctica realizada</option>` +
     propias.map(p => `<option value="${p.id}" ${p.id === seleccionadaId ? "selected" : ""}>${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
 }
 document.getElementById("informe-alumno").addEventListener("change", (e) => llenarSelectPracticaDeInforme(e.target.value));
@@ -1029,14 +1032,42 @@ async function cargarInformes() {
   const mapaPracticas = Object.fromEntries(practicas.map(p => [p.id, p]));
 
   const snap = await getDocs(query(collection(db, "informes"), orderBy("fechaPresentacion", "desc")));
-  let informes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const todosInformes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   const fAlumno = document.getElementById("if-alumno").value.trim().toLowerCase();
   const fLugar = document.getElementById("if-lugar").value.trim().toLowerCase();
   const fTitulo = document.getElementById("if-titulo").value.trim().toLowerCase();
   const fEstado = document.getElementById("if-estado").value;
 
-  informes = informes.filter(i => {
+  // El cumplimiento se calcula por práctica, no por cantidad bruta de
+  // documentos: dos informes vinculados a la misma práctica cubren una sola.
+  // "Pendiente" todavía no se considera presentado.
+  const informesPresentados = todosInformes.filter(i => i.practicaId && i.estado !== "pendiente");
+  const practicasRealizadas = practicas.filter(p => practicaRealizada(p)).filter(p => {
+    const alumno = mapaAlumnos[p.alumnoId];
+    if (fAlumno && !(alumno && `${nombreCompleto(alumno)} ${alumno.legajo}`.toLowerCase().includes(fAlumno))) return false;
+    if (fLugar && !(p.lugar || "").toLowerCase().includes(fLugar)) return false;
+    return true;
+  });
+  const porAlumno = {};
+  practicasRealizadas.forEach(p => (porAlumno[p.alumnoId] ||= []).push(p));
+  document.getElementById("tabla-cumplimiento-informes").innerHTML = Object.entries(porAlumno)
+    .sort(([aId], [bId]) => (mapaAlumnos[aId] ? nombreCompleto(mapaAlumnos[aId]) : "").localeCompare(mapaAlumnos[bId] ? nombreCompleto(mapaAlumnos[bId]) : ""))
+    .map(([alumnoId, realizadas]) => {
+      const idsRealizadas = new Set(realizadas.map(p => p.id));
+      const cubiertas = new Set(informesPresentados.filter(i => i.alumnoId === alumnoId && idsRealizadas.has(i.practicaId)).map(i => i.practicaId));
+      const faltantes = realizadas.filter(p => !cubiertas.has(p.id));
+      const completo = faltantes.length === 0;
+      const detalleFaltantes = faltantes.map(p => `${p.lugar} (${fmtRangoFechas(p)})`).join("; ");
+      return `<tr class="${completo ? "table-success" : "table-danger"}">
+        <td>${escaparHTML(mapaAlumnos[alumnoId] ? nombreCompleto(mapaAlumnos[alumnoId]) : "Alumno no encontrado")}</td>
+        <td>${realizadas.length}</td>
+        <td>${cubiertas.size}</td>
+        <td><span class="badge bg-${completo ? "success" : "danger"}" ${detalleFaltantes ? `title="${escaparHTML(detalleFaltantes)}"` : ""}>${completo ? "Completo" : `Faltan ${faltantes.length}`}</span></td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="4" class="text-muted">No hay prácticas realizadas para los filtros seleccionados.</td></tr>`;
+
+  const informes = todosInformes.filter(i => {
     const alumno = mapaAlumnos[i.alumnoId];
     const practica = i.practicaId ? mapaPracticas[i.practicaId] : null;
     if (fAlumno && !(alumno && `${nombreCompleto(alumno)} ${alumno.legajo}`.toLowerCase().includes(fAlumno))) return false;
@@ -1918,7 +1949,7 @@ async function cargarMiPractica() {
   const propias = snapPracticas.docs.map(d=>({id:d.id,...d.data()}));
   const asistencias = snapAsist.docs.map(d => d.data()).sort((x,y)=>String(y.fecha).localeCompare(String(x.fecha)));
   const horas = propias.filter(practicaRealizada).reduce((t,p)=>t+numeroHoras(p.horasTotales),0);
-  document.getElementById("mi-practica-datos").innerHTML = `<div class="row g-2"><div class="col-md-4"><strong>Alumno</strong><br>${escaparHTML(nombreCompleto(a))}</div><div class="col-md-3"><strong>Legajo</strong><br>${escaparHTML(a.legajo)}</div><div class="col-md-3"><strong>Curso</strong><br>${escaparHTML(a.curso || "-")}</div><div class="col-md-2"><strong>Horas realizadas</strong><br>${horas.toFixed(1)}</div></div>`;
+  document.getElementById("mi-practica-datos").innerHTML = `<div class="row g-2"><div class="col-md-3"><strong>Alumno</strong><br>${escaparHTML(nombreCompleto(a))}</div><div class="col-md-2"><strong>Legajo</strong><br>${escaparHTML(a.legajo)}</div><div class="col-md-2"><strong>Curso</strong><br>${escaparHTML(a.curso || "-")}</div><div class="col-md-2"><strong>Teléfono</strong><br>${escaparHTML(a.telefono || "-")}</div><div class="col-md-3"><strong>Horas realizadas</strong><br>${horas.toFixed(1)}</div></div>`;
   document.getElementById("tabla-mi-practica").innerHTML = propias.map(p=>`<tr class="tipo-${p.tipo || "interna"}"><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(p.lugar)}</td><td>${escaparHTML(p.sector||"")}</td><td>${escaparHTML(estadoPractica(p).replace("_"," "))}</td><td>${numeroHoras(p.horasTotales).toFixed(1)}</td><td>${escaparHTML(p.tutorResponsable||"")}</td></tr>`).join("") || `<tr><td colspan="6">No hay prácticas asignadas.</td></tr>`;
   document.getElementById("tabla-mi-asistencia").innerHTML = asistencias.map(r=>`<tr><td>${fmtFecha(r.fecha)}</td><td>${escaparHTML(r.lugar||"")}</td><td>${escaparHTML(ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"))}</td><td>${escaparHTML(`${r.horaEntrada||""} - ${r.horaSalida||""}`)}</td><td>${escaparHTML(r.observaciones||"")}</td></tr>`).join("") || `<tr><td colspan="5">Sin registros de asistencia.</td></tr>`;
 }
@@ -1953,18 +1984,19 @@ document.getElementById("btn-generar-pdf").addEventListener("click", async () =>
     if (!snapA.exists()) throw new Error("Alumno no encontrado.");
     const a={id:snapA.id,...snapA.data()}, propias=practicas.docs.map(d=>({id:d.id,...d.data()})), asist=snapAsist.docs.map(d=>d.data()), informes=snapInformes.docs.map(d=>d.data());
     const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:"mm",format:"a4"});
+    if (typeof pdf.autoTable !== "function") throw new Error("No se cargó el componente de tablas PDF. Recargá la página e intentá nuevamente.");
     const logo = await imagenADataURL("img/guemes.png").catch(()=>"");
     const encabezado = () => { if(logo) pdf.addImage(logo,"PNG",12,8,22,22); pdf.setTextColor(7,84,127); pdf.setFontSize(15); pdf.text("Escuela Técnica N.° 10",40,15); pdf.setFontSize(11); pdf.text("Prácticas Profesionalizantes",40,22); pdf.setDrawColor(5,143,208); pdf.line(12,33,198,33); };
     encabezado(); let y=40;
     pdf.setTextColor(30); pdf.setFontSize(14); pdf.text(`Informe de ${nombreCompleto(a)}`,12,y); y+=7;
-    const tabla = (titulo, head, body) => { pdf.setFontSize(11); pdf.setTextColor(165,48,43); pdf.text(titulo,12,y); y+=2; pdf.autoTable({startY:y,head:[head],body,theme:"grid",headStyles:{fillColor:[5,143,208]},styles:{fontSize:8},margin:{left:12,right:12,top:38},didDrawPage:()=>{if(pdf.internal.getNumberOfPages()>1) encabezado();}}); y=pdf.lastAutoTable.finalY+8; if(y>265){pdf.addPage(); encabezado(); y=40;} };
-    if(opciones.has("datos")) tabla("Datos personales",["Dato","Información"],[["Legajo",a.legajo||""],["Curso / división",a.curso||""],["Sector / carrera",a.sector||""],["Email",a.email||""]]);
+    const tabla = (titulo, head, body) => { const filas = body.length ? body : [head.map((_,i)=>i===0?"Sin registros":"")]; pdf.setFontSize(11); pdf.setTextColor(165,48,43); pdf.text(titulo,12,y); y+=2; pdf.autoTable({startY:y,head:[head],body:filas,theme:"grid",headStyles:{fillColor:[5,143,208]},styles:{fontSize:8},margin:{left:12,right:12,top:38},didDrawPage:()=>{if(pdf.internal.getNumberOfPages()>1) encabezado();}}); y=pdf.lastAutoTable.finalY+8; if(y>265){pdf.addPage(); encabezado(); y=40;} };
+    if(opciones.has("datos")) tabla("Datos personales",["Dato","Información"],[["Legajo",a.legajo||""],["Curso / división",a.curso||""],["Sector / carrera",a.sector||""],["Email",a.email||""],["Teléfono",a.telefono||""]]);
     if(opciones.has("horas")){const por={};propias.filter(practicaRealizada).forEach(p=>por[p.sector||"Sin sector"]=(por[p.sector||"Sin sector"]||0)+numeroHoras(p.horasTotales));tabla("Horas realizadas por sector",["Sector","Horas"],Object.entries(por).map(([s,h])=>[s,h.toFixed(1)]));}
-    if(opciones.has("practicas")) tabla("Prácticas",["Período","Lugar","Sector","Estado","Horas"],propias.map(p=>[fmtRangoFechas(p),p.lugar||"",p.sector||"",estadoPractica(p).replace("_"," "),numeroHoras(p.horasTotales).toFixed(1)]));
-    if(opciones.has("inasistencias")) tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asist.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado],r.observaciones||""]));
+    if(opciones.has("practicas")) tabla("Prácticas realizadas",["Período","Lugar","Sector","Estado","Horas"],propias.filter(practicaRealizada).map(p=>[fmtRangoFechas(p),p.lugar||"",p.sector||"",estadoPractica(p).replace("_"," "),numeroHoras(p.horasTotales).toFixed(1)]));
+    if(opciones.has("inasistencias")) tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asist.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)||(!r.estado&&r.presente===false)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado]||"Ausente injustificado",r.observaciones||""]));
     if(opciones.has("tardanzas")) tabla("Tardanzas",["Fecha","Lugar","Horario","Observación"],asist.filter(r=>r.estado==="tardanza").map(r=>[fmtFecha(r.fecha),r.lugar||"",`${r.horaEntrada||""}-${r.horaSalida||""}`,r.observaciones||""]));
-    if(opciones.has("informes")) tabla("Informes presentados",["Fecha","Título","Estado","Observación"],informes.map(i=>[fmtFecha(i.fecha),i.titulo||"",i.estado||"",i.observaciones||""]));
-    const devolucion=document.getElementById("pdf-devolucion").value.trim(); if(devolucion){pdf.setTextColor(165,48,43);pdf.setFontSize(11);pdf.text("Devolución / observaciones",12,y);pdf.setTextColor(30);pdf.setFontSize(9);pdf.text(pdf.splitTextToSize(devolucion,184),12,y+6);}
+    if(opciones.has("informes")) tabla("Informes presentados",["Fecha","Título","Estado","Observación"],informes.filter(i=>i.estado!=="pendiente").map(i=>[fmtFecha(i.fechaPresentacion||i.fecha),i.titulo||"",i.estado||"",i.observaciones||""]));
+    const devolucion=document.getElementById("pdf-devolucion").value.trim(); if(opciones.has("devolucion")) tabla("Devolución / observaciones docentes",["Observación"],[[devolucion||"Sin observaciones docentes."]]);
     const paginas=pdf.internal.getNumberOfPages();for(let i=1;i<=paginas;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(100);pdf.text(`Generado ${new Date().toLocaleDateString("es-AR")} · Página ${i} de ${paginas}`,105,291,{align:"center"});}
     pdf.save(`informe_${String(a.apellido||"alumno").replace(/\s+/g,"_")}_${hoyISO()}.pdf`); cerrarModal("modal-informe-pdf");
   } catch(err){mostrarAlerta(err.message||"No se pudo generar el PDF.","danger");} finally{btn.disabled=false;}
@@ -2354,6 +2386,7 @@ const CAMPOS_IMPORTAR = [
   { key: "apellido", alias: ["apellido"] },
   { key: "nombre", alias: ["nombre"] },
   { key: "email", alias: ["email", "mail", "correo"] },
+  { key: "telefono", alias: ["telefono", "tel", "celular", "telefono celular", "contacto alumno"] },
   { key: "curso", alias: ["curso", "division", "curso / division", "curso/division", "curso y division"] },
   { key: "sector", alias: ["sector", "carrera", "sector / carrera", "sector/carrera"] },
   { key: "lugar", alias: ["lugar", "lugar de practica"] },
@@ -2445,14 +2478,14 @@ function determinarRealizada(datos, fechaISO, fechaFinISO) {
 
 document.getElementById("btn-importar-plantilla").addEventListener("click", () => {
   if (!window.XLSX) { mostrarAlerta("No se cargó Excel. Recargá la página.", "danger"); return; }
-  const encabezados = ["Legajo", "Apellido", "Nombre", "Email", "Curso / División", "Sector / Carrera", "Lugar de práctica",
+  const encabezados = ["Legajo", "Apellido", "Nombre", "Email", "Teléfono", "Curso / División", "Sector / Carrera", "Lugar de práctica",
     "Tipo (interna/externa/interescolar)", "Fecha inicio (AAAA-MM-DD)", "Fecha fin (AAAA-MM-DD)", "Hora inicio", "Hora fin",
     "Horas x día (si está pendiente)", "Días por semana (si está pendiente)", "Horas totales (si ya se realizó)",
     "Tutor responsable", "Email tutor", "Contacto", "Presente (si/no)", "Estado (realizada/pendiente)",
     "Observaciones asistencia", "Notas práctica"];
-  const ejemploRealizada = ["1234", "Gómez", "Ana", "ana@mail.com", "5to Enfermería", "Enfermería", "Hospital Central", "interna",
+  const ejemploRealizada = ["1234", "Gómez", "Ana", "ana@mail.com", "2664 123456", "5to Enfermería", "Enfermería", "Hospital Central", "interna",
     "2026-09-15", "2026-09-15", "08:00", "12:00", "4", "5", "4", "Lic. Pérez", "perez@escuela.edu.ar", "011-555-1234", "si", "realizada", "Llegó puntual", "Primer día"];
-  const ejemploPendiente = ["1235", "Pérez", "Luis", "luis@mail.com", "5to Enfermería", "Enfermería", "Hospital Central", "interna",
+  const ejemploPendiente = ["1235", "Pérez", "Luis", "luis@mail.com", "2664 654321", "5to Enfermería", "Enfermería", "Hospital Central", "interna",
     "2026-10-01", "2026-12-19", "", "", "4", "3", "", "Lic. Pérez", "perez@escuela.edu.ar", "011-555-1234", "", "pendiente", "", "Se calcula solo con horas x día y días/semana"];
   const ws = XLSX.utils.aoa_to_sheet([encabezados, ejemploRealizada, ejemploPendiente]);
   const wb = XLSX.utils.book_new();
@@ -2601,6 +2634,7 @@ document.getElementById("btn-importar-confirmar").addEventListener("click", asyn
           nombre: (f.datos.nombre || "").trim(),
           apellido: (f.datos.apellido || "").trim(),
           email: (f.datos.email || "").trim(),
+          telefono: (f.datos.telefono || "").trim(),
           curso: (f.datos.curso || "").trim(),
           sector: (f.datos.sector || "").trim(),
         }, { merge: true });
@@ -2663,7 +2697,7 @@ document.getElementById("btn-importar-confirmar").addEventListener("click", asyn
 // Importación independiente de alumnos: alta o actualización por legajo/DNI.
 let filasImportarAlumnos = [];
 document.getElementById("btn-alumnos-plantilla").addEventListener("click", () => {
-  const datos=[["Legajo","Apellido","Nombre","Email","Curso / División","Sector / Carrera"],["48354207","Calvo Albornoz","Alma Valentina","alumno@sanluis.edu.ar","7 B","Informática"]];
+  const datos=[["Legajo","Apellido","Nombre","Email","Teléfono","Curso / División","Sector / Carrera"],["48354207","Calvo Albornoz","Alma Valentina","alumno@sanluis.edu.ar","2664 123456","7 B","Informática"]];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(datos),"Alumnos");XLSX.writeFile(wb,"plantilla_alumnos.xlsx");
 });
 async function leerPlanilla(file){
@@ -2681,16 +2715,21 @@ document.getElementById("importar-alumnos-archivo").addEventListener("change", a
 function renderImportarAlumnos(){
   const validas=filasImportarAlumnos.filter(f=>!f.errores.length).length;
   document.getElementById("importar-alumnos-resumen").innerHTML=`Filas: <strong>${filasImportarAlumnos.length}</strong> · Válidas: <strong class="text-success">${validas}</strong> · Se actualizarán: <strong>${filasImportarAlumnos.filter(f=>f.existente&&!f.errores.length).length}</strong>`;
-  document.getElementById("tabla-importar-alumnos").innerHTML=filasImportarAlumnos.map(f=>`<tr class="${f.errores.length?"table-danger":f.existente?"table-info":""}"><td>${f.fila}</td><td>${escaparHTML(f.d.legajo)}</td><td>${escaparHTML(`${f.d.apellido} ${f.d.nombre}`)}</td><td>${escaparHTML(f.d.curso)}</td><td>${escaparHTML(f.d.sector)}</td><td>${escaparHTML(f.d.email)}</td><td>${f.existente?"Actualizar":"Crear"}</td><td>${f.errores.join("; ")||"OK"}</td></tr>`).join("")||`<tr><td colspan="8">Sin datos.</td></tr>`;
+  document.getElementById("tabla-importar-alumnos").innerHTML=filasImportarAlumnos.map(f=>`<tr class="${f.errores.length?"table-danger":f.existente?"table-info":""}"><td>${f.fila}</td><td>${escaparHTML(f.d.legajo)}</td><td>${escaparHTML(`${f.d.apellido} ${f.d.nombre}`)}</td><td>${escaparHTML(f.d.curso)}</td><td>${escaparHTML(f.d.sector)}</td><td>${escaparHTML(f.d.email)}</td><td>${escaparHTML(f.d.telefono)}</td><td>${f.existente?"Actualizar":"Crear"}</td><td>${f.errores.join("; ")||"OK"}</td></tr>`).join("")||`<tr><td colspan="9">Sin datos.</td></tr>`;
   document.getElementById("btn-importar-alumnos-confirmar").disabled=!validas;
 }
 document.getElementById("btn-importar-alumnos-confirmar").addEventListener("click",async e=>{
   const btn=e.currentTarget;btn.disabled=true;let creados=0,actualizados=0,omitidos=0;
-  for(const f of filasImportarAlumnos){if(f.errores.length){omitidos++;continue;}const datos={legajo:String(f.d.legajo).trim(),apellido:String(f.d.apellido).trim(),nombre:String(f.d.nombre).trim()};for(const [k,v] of Object.entries({email:f.d.email,curso:f.d.curso,sector:f.d.sector})){if(String(v||"").trim())datos[k]=String(v).trim();}try{const id=f.existente?.id||idAlumnoDesdeLegajo(datos.legajo);await setDoc(doc(db,"alumnos",id),datos,{merge:true});f.existente?actualizados++:creados++;}catch(_){omitidos++;}}
+  for(const f of filasImportarAlumnos){if(f.errores.length){omitidos++;continue;}const datos={legajo:String(f.d.legajo).trim(),apellido:String(f.d.apellido).trim(),nombre:String(f.d.nombre).trim()};for(const [k,v] of Object.entries({email:f.d.email,telefono:f.d.telefono,curso:f.d.curso,sector:f.d.sector})){if(String(v||"").trim())datos[k]=String(v).trim();}try{const id=f.existente?.id||idAlumnoDesdeLegajo(datos.legajo);await setDoc(doc(db,"alumnos",id),datos,{merge:true});f.existente?actualizados++:creados++;}catch(_){omitidos++;}}
   cacheAlumnos=[];mostrarAlerta(`Alumnos creados: ${creados}. Actualizados: ${actualizados}. Omitidos: ${omitidos}.`);filasImportarAlumnos=[];renderImportarAlumnos();document.getElementById("importar-alumnos-archivo").value="";
 });
 
-// ------------------------------------------------------- FUSIONAR DUPLICADOS -
+// ------------------------------------------------------------ OPTIMIZAR -
+async function cargarOptimizacion() {
+  await Promise.all([cargarDuplicados(), cargarPracticasCorrelativas()]);
+}
+
+// Fusionar alumnos duplicados.
 // Agrupa alumnos que probablemente son la misma persona: mismo legajo
 // normalizado (normalizarLegajo, que ignora ceros a la izquierda y
 // separadores) O mismo nombre y apellido normalizados. Se usa un union-find
@@ -2817,7 +2856,7 @@ window.fusionarGrupo = async (gi) => {
 
     // Completa datos vacíos del registro que se mantiene con datos de los duplicados (no pisa lo que ya tenía)
     const relleno = {};
-    ["email", "sector", "curso", "legajo"].forEach(campo => {
+    ["email", "telefono", "sector", "curso", "legajo"].forEach(campo => {
       if (!principal[campo]) {
         const conDato = otros.find(o => o[campo]);
         if (conDato) relleno[campo] = conDato[campo];
@@ -2832,6 +2871,108 @@ window.fusionarGrupo = async (gi) => {
     await cargarDuplicados();
   } catch (err) {
     mostrarAlerta("No se pudo completar la fusión. Probá de nuevo.", "danger");
+  }
+};
+
+// Devuelve el lunes de la semana de una fecha ISO. Trabaja en hora local para
+// evitar que la zona horaria cambie el día al convertir a Date.
+function inicioSemanaISO(fechaISO) {
+  const [y, m, d] = fechaISO.split("-").map(Number);
+  const dia = new Date(y, m - 1, d).getDay();
+  return sumarDiasISO(fechaISO, dia === 0 ? -6 : 1 - dia);
+}
+
+function buscarGruposPracticasCorrelativas(practicas) {
+  const candidatos = practicas.filter(p => p.fecha && (!p.fechaFin || p.fechaFin === p.fecha) && p.alumnoId && p.lugar && p.sector);
+  const porCompatibilidad = {};
+  candidatos.forEach(p => {
+    // Se exige también igual tipo, estado, tutor y horario para que el período
+    // resultante no mezcle datos incompatibles aunque lugar y sector coincidan.
+    const clave = [p.alumnoId, normalizarTexto(p.lugar), normalizarTexto(p.sector), normalizarTipo(p.tipo), estadoPractica(p),
+      normalizarTexto(p.tutorResponsable || ""), p.horaInicio || "", p.horaFin || "", inicioSemanaISO(p.fecha)].join("|");
+    (porCompatibilidad[clave] ||= []).push(p);
+  });
+
+  const grupos = [];
+  Object.values(porCompatibilidad).forEach(lista => {
+    lista.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    let corrida = [];
+    lista.forEach(p => {
+      if (!corrida.length || p.fecha === sumarDiasISO(corrida[corrida.length - 1].fecha, 1)) corrida.push(p);
+      else { if (corrida.length > 1) grupos.push(corrida); corrida = [p]; }
+    });
+    if (corrida.length > 1) grupos.push(corrida);
+  });
+  return grupos.sort((a, b) => a[0].fecha.localeCompare(b[0].fecha));
+}
+
+async function cargarPracticasCorrelativas() {
+  const resumen = document.getElementById("practicas-correlativas-resumen");
+  const lista = document.getElementById("practicas-correlativas-lista");
+  resumen.textContent = "Buscando...";
+  const [practicas, asistSnap, informesSnap] = await Promise.all([
+    obtenerPracticas(), getDocs(collection(db, "asistencias")), getDocs(collection(db, "informes")),
+  ]);
+  const grupos = buscarGruposPracticasCorrelativas(practicas);
+  const asistencias = asistSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const informes = informesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  ultimosGruposCorrelativos = { grupos, asistencias, informes };
+  resumen.innerHTML = grupos.length
+    ? `Se encontraron <strong>${grupos.length}</strong> período(s) que pueden agruparse.`
+    : "No se encontraron jornadas consecutivas compatibles para agrupar.";
+  lista.innerHTML = grupos.map((g, gi) => {
+    const p = g[0];
+    const totalHoras = g.reduce((s, x) => s + numeroHoras(x.horasTotales), 0);
+    return `<div class="card p-3 mb-3 shadow-sm">
+      <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+        <div><strong>${escaparHTML(p.alumno ? nombreCompleto(p.alumno) : "Alumno no encontrado")}</strong><br>
+          <span>${fmtFecha(g[0].fecha)} → ${fmtFecha(g[g.length - 1].fecha)} · ${escaparHTML(p.lugar)} · ${escaparHTML(p.sector)}</span></div>
+        <span class="badge bg-primary">${g.length} jornadas · ${totalHoras.toFixed(1)} h</span>
+      </div>
+      <div class="small text-muted my-2">${g.map(x => fmtFecha(x.fecha)).join(" · ")}</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="window.agruparPracticasCorrelativas(${gi})">Agrupar este período</button>
+    </div>`;
+  }).join("");
+}
+
+document.getElementById("btn-buscar-practicas-correlativas").addEventListener("click", cargarPracticasCorrelativas);
+
+window.agruparPracticasCorrelativas = async (gi) => {
+  const contexto = ultimosGruposCorrelativos;
+  const grupo = contexto?.grupos?.[gi];
+  if (!grupo?.length) return;
+  const ordenadas = [...grupo].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const principal = ordenadas[0];
+  const restantes = ordenadas.slice(1);
+  const totalHoras = ordenadas.reduce((s, p) => s + numeroHoras(p.horasTotales), 0);
+  if (!confirm(`Se agruparán ${ordenadas.length} jornadas desde ${fmtFecha(principal.fecha)} hasta ${fmtFecha(ordenadas.at(-1).fecha)}. Se conservarán ${totalHoras.toFixed(1)} horas en total. ¿Continuar?`)) return;
+
+  try {
+    const idsRestantes = new Set(restantes.map(p => p.id));
+    const diasSemana = [...new Set(ordenadas.map(p => {
+      const [y, m, d] = p.fecha.split("-").map(Number); return new Date(y, m - 1, d).getDay();
+    }))].sort((a, b) => a - b);
+    const horasDiarias = ordenadas.map(p => numeroHoras(p.horasPorDia || p.horasTotales)).filter(Boolean);
+    const notas = [...new Set(ordenadas.map(p => String(p.notas || "").trim()).filter(Boolean))].join(" | ");
+
+    await updateDoc(doc(db, "practicas", principal.id), {
+      fecha: principal.fecha,
+      fechaFin: ordenadas.at(-1).fecha,
+      horasTotales: +totalHoras.toFixed(2),
+      horasPorDia: horasDiarias.length ? +(horasDiarias.reduce((s, h) => s + h, 0) / horasDiarias.length).toFixed(2) : 0,
+      diasPorSemana: diasSemana.length,
+      diasSemana,
+      notas,
+    });
+    await Promise.all([
+      ...contexto.asistencias.filter(x => idsRestantes.has(x.practicaId)).map(x => updateDoc(doc(db, "asistencias", x.id), { practicaId: principal.id })),
+      ...contexto.informes.filter(x => idsRestantes.has(x.practicaId)).map(x => updateDoc(doc(db, "informes", x.id), { practicaId: principal.id })),
+    ]);
+    await Promise.all(restantes.map(p => deleteDoc(doc(db, "practicas", p.id))));
+    mostrarAlerta(`Se agruparon ${ordenadas.length} jornadas en el período ${fmtRangoFechas({ fecha: principal.fecha, fechaFin: ordenadas.at(-1).fecha })}.`);
+    await cargarPracticasCorrelativas();
+  } catch (err) {
+    mostrarAlerta(`No se pudieron agrupar las prácticas: ${err.message || err}`, "danger");
   }
 };
 
@@ -2908,7 +3049,7 @@ document.getElementById("btn-exportar-ficha").addEventListener("click", e => acc
   const registros = snap => snap.docs.map(d => d.data()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
   const nombre = String(a.legajo || a.id).replace(/[^\p{L}\p{N}_-]/gu, "_");
   exportarLibro(`ficha_${nombre}_${hoyISO()}.xlsx`, [
-    { nombre: "Ficha", encabezados: ["Dato", "Valor"], filas: [["Alumno", nombreCompleto(a)], ["Legajo", a.legajo || ""], ["Curso", a.curso || ""], ["Sector", a.sector || ""], ["Email", a.email || ""], ["Horas realizadas", realizadas], ["Horas pendientes estimadas", pendientes], ["Cantidad de prácticas", propias.length], ["Generado", new Date().toLocaleString("es-AR")], ["Criterio", "Horas tomadas de prácticas; asistencias y faltas no se suman ni descuentan automáticamente."]] },
+    { nombre: "Ficha", encabezados: ["Dato", "Valor"], filas: [["Alumno", nombreCompleto(a)], ["Legajo", a.legajo || ""], ["Curso", a.curso || ""], ["Sector", a.sector || ""], ["Email", a.email || ""], ["Teléfono", a.telefono || ""], ["Horas realizadas", realizadas], ["Horas pendientes estimadas", pendientes], ["Cantidad de prácticas", propias.length], ["Generado", new Date().toLocaleString("es-AR")], ["Criterio", "Horas tomadas de prácticas; asistencias y faltas no se suman ni descuentan automáticamente."]] },
     { nombre: "Prácticas", encabezados: columnasPractica, filas: propias.map(filaPractica) },
     { nombre: "Asistencias", encabezados: ["Fecha", "Lugar", "Tipo", "Estado", "Entrada", "Salida", "Observaciones"], filas: registros(asistencias).map(r => [fmtFecha(r.fecha), r.lugar || "", infoTipo(r.tipo).label, ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"), r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""]) },
     { nombre: "Faltas", encabezados: ["Fecha", "Justificada", "Motivo"], filas: registros(faltas).map(r => [fmtFecha(r.fecha), r.justificada ? "Sí" : "No", r.motivo || ""]) },

@@ -41,6 +41,7 @@
   .vista table tbody tr:nth-child(odd) > td { background-color: var(--section-soft); }
   .vista table tbody tr:nth-child(even) > td { background-color: #fff; }
   .vista table tbody tr.table-danger > td { background-color: #f8d7da !important; }
+  .vista table tbody tr.table-success > td { background-color: #d1e7dd !important; }
   .vista table tbody tr.table-warning > td { background-color: #fff3cd !important; }
   .vista table tbody tr.table-info > td { background-color: #cff4fc !important; }
   .table-responsive { width: 100%; overflow-x: auto; }
@@ -59,6 +60,7 @@
   .card-alumnos { border-top-color: var(--pp-rojo) !important; }
   .card-alumnos table thead th { background: var(--pp-rojo) !important; color: #fff; }
   .card-alumnos table tbody tr:nth-child(odd) > td { background: var(--pp-rojo-suave) !important; }
+  .card-practicas { border-top-color: var(--pp-azul) !important; border-left-color: var(--pp-azul) !important; background: linear-gradient(110deg,var(--pp-celeste),#fff 34%) !important; }
   .tabla-practicas tbody tr.tipo-interna > td { background-color: #eceff1 !important; }
   .tabla-practicas tbody tr.tipo-externa > td { background-color: #e0f6fb !important; }
   .tabla-practicas tbody tr.tipo-interescolar > td { background-color: #f0e5f5 !important; }
@@ -68,6 +70,7 @@
   #modal-practica { --modal-color: var(--pp-azul); } #modal-alumno, #modal-informe-pdf { --modal-color: var(--pp-rojo); } #modal-informe { --modal-color: #197d83; }
   .modal[style*="--modal-color"] .modal-content, #modal-practica .modal-content, #modal-alumno .modal-content, #modal-informe-pdf .modal-content, #modal-informe .modal-content { border-top: 5px solid var(--modal-color); }
   #modal-practica table thead th, #modal-alumno table thead th, #modal-informe-pdf table thead th, #modal-informe table thead th { background: var(--modal-color); color: #fff; }
+  .filtros-horizontales.card { flex-direction: row !important; align-items: flex-end !important; height: auto !important; min-height: 0 !important; }
   .filtros-horizontales .filtro-item { flex: 1 1 145px; min-width: 130px; }
   #modal-practica .modal-dialog { height: calc(100vh - 1rem); margin-top: .5rem; margin-bottom: .5rem; }
   #modal-practica .modal-content { max-height: calc(100vh - 1rem); overflow: hidden; }
@@ -76,7 +79,10 @@
     .filtros-horizontales .filtro-item { flex: 0 0 calc(33.333% - .5rem); min-width: 0; }
     .filtros-horizontales > .d-flex { flex: 0 0 auto; }
   }
-  @media (max-width: 767.98px) { .filtros-horizontales > div { min-width: 100%; } }
+  @media (max-width: 767.98px) {
+    .filtros-horizontales.card { flex-direction: column !important; align-items: stretch !important; }
+    .filtros-horizontales > div { width: 100%; min-width: 100%; }
+  }
   .vista { display: none; }
   .vista.activa { display: block; }
   /* Color de referencia por tipo de práctica, para distinguirlas de un
@@ -142,7 +148,7 @@
           <li class="nav-item"><a class="nav-link" href="#" data-view="alumnos">Alumnos</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar</a></li>
           <li class="nav-item alumno-only d-none"><a class="nav-link" href="#" data-view="mi-practica">Mi práctica</a></li>
-          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Duplicados</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Optimizar</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="usuarios">Usuarios</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="configuracion">Config.</a></li>
         </ul>
@@ -353,7 +359,7 @@
         <button class="btn btn-primary btn-sm" id="btn-nuevo-alumno">+ Nuevo alumno</button>
       </div>
       <div class="row g-2 mb-3" style="max-width:500px">
-        <div class="col-md-7"><input class="form-control" id="alumno-filtro-texto" placeholder="Buscar por nombre, legajo o sector"></div>
+        <div class="col-md-7"><input class="form-control" id="alumno-filtro-texto" placeholder="Buscar por nombre, legajo, teléfono o sector"></div>
         <div class="col-md-5"><input class="form-control" id="alumno-filtro-curso" placeholder="Filtrar por curso / división"></div>
       </div>
       <div class="d-flex gap-2 mb-2">
@@ -362,7 +368,7 @@
       </div>
       <div class="table-responsive">
       <table class="table table-bordered tabla-practicas">
-        <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector / carrera</th><th>Email</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso</th><th>Sector</th><th>Email</th><th>Teléfono</th><th></th></tr></thead>
         <tbody id="tabla-alumnos"></tbody>
       </table>
       </div>
@@ -381,9 +387,10 @@
               <div class="col-md-4 mb-2"><label class="form-label">Apellido</label><input class="form-control" id="alumno-apellido" required></div>
             </div>
             <div class="row">
-              <div class="col-md-4 mb-2"><label class="form-label">Curso / división</label><input class="form-control" id="alumno-curso" placeholder="Ej: 5to Informática"></div>
-              <div class="col-md-4 mb-2"><label class="form-label">Email</label><input type="email" class="form-control" id="alumno-email"></div>
-              <div class="col-md-4 mb-2"><label class="form-label">Sector / carrera</label><input class="form-control" id="alumno-sector"></div>
+              <div class="col-md-6 col-lg-3 mb-2"><label class="form-label">Curso / división</label><input class="form-control" id="alumno-curso" placeholder="Ej: 5to Informática"></div>
+              <div class="col-md-6 col-lg-3 mb-2"><label class="form-label">Sector / carrera</label><input class="form-control" id="alumno-sector"></div>
+              <div class="col-md-6 col-lg-3 mb-2"><label class="form-label">Email</label><input type="email" class="form-control" id="alumno-email"></div>
+              <div class="col-md-6 col-lg-3 mb-2"><label class="form-label">Teléfono</label><input type="tel" class="form-control" id="alumno-telefono" autocomplete="tel" placeholder="Ej: 2664 123456"></div>
             </div>
 
             <div id="alumno-practicas-wrap" class="d-none mt-3">
@@ -554,10 +561,19 @@
           <button class="btn btn-outline-secondary" id="btn-limpiar-informes">Limpiar</button>
         </div>
       </div>
-      <table class="table table-bordered">
-        <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Práctica</th><th>Enlace</th></tr></thead>
-        <tbody id="tabla-informes"></tbody>
-      </table>
+      <div class="card p-3 shadow-sm mb-4">
+        <h5>Control de cumplimiento por alumno</h5>
+        <p class="text-muted small">Cada práctica realizada debe tener al menos un informe presentado y vinculado. Verde: cumplimiento completo. Rojo: falta uno o más informes.</p>
+        <div class="table-responsive"><table class="table table-bordered mb-0">
+          <thead><tr><th>Alumno</th><th>Prácticas realizadas</th><th>Informes presentados</th><th>Estado</th></tr></thead>
+          <tbody id="tabla-cumplimiento-informes"></tbody>
+        </table></div>
+      </div>
+      <h5>Detalle de informes registrados</h5>
+      <div class="table-responsive"><table class="table table-bordered">
+          <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Práctica</th><th>Enlace</th></tr></thead>
+          <tbody id="tabla-informes"></tbody>
+      </table></div>
     </section>
 
     <div class="modal fade" id="modal-informe" tabindex="-1">
@@ -567,9 +583,9 @@
           <div class="modal-body">
             <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="informe-alumno" required></select></div>
             <div class="mb-2">
-              <label class="form-label">Práctica correspondiente (opcional)</label>
-              <select class="form-select" id="informe-practica"><option value="">Sin vincular a una práctica</option></select>
-              <div class="form-text">Vincularlo permite que aparezca en "Resumen por práctica".</div>
+              <label class="form-label">Práctica realizada correspondiente</label>
+              <select class="form-select" id="informe-practica" required><option value="">Seleccionar práctica realizada</option></select>
+              <div class="form-text">El vínculo es obligatorio para contabilizar correctamente el cumplimiento del alumno.</div>
             </div>
             <div class="mb-2"><label class="form-label">Título</label><input class="form-control" id="informe-titulo" required></div>
             <div class="mb-2"><label class="form-label">Fecha de presentación</label><input type="date" class="form-control" id="informe-fecha"></div>
@@ -910,13 +926,13 @@
         <div class="d-flex flex-wrap gap-2 mb-3"><button class="btn btn-outline-secondary btn-sm" id="btn-alumnos-plantilla">Descargar plantilla de alumnos</button></div>
         <input type="file" class="form-control mb-3" id="importar-alumnos-archivo" accept=".xlsx,.xls,.csv">
         <div id="importar-alumnos-resumen" class="text-muted mb-2"></div>
-        <div class="table-responsive"><table class="table table-bordered table-sm"><thead><tr><th>Fila</th><th>Legajo</th><th>Alumno</th><th>Curso</th><th>Sector</th><th>Email</th><th>Acción</th><th>Validación</th></tr></thead><tbody id="tabla-importar-alumnos"><tr><td colspan="8" class="text-muted">Subí una planilla para ver la vista previa.</td></tr></tbody></table></div>
+        <div class="table-responsive"><table class="table table-bordered table-sm"><thead><tr><th>Fila</th><th>Legajo</th><th>Alumno</th><th>Curso</th><th>Sector</th><th>Email</th><th>Teléfono</th><th>Acción</th><th>Validación</th></tr></thead><tbody id="tabla-importar-alumnos"><tr><td colspan="9" class="text-muted">Subí una planilla para ver la vista previa.</td></tr></tbody></table></div>
         <button class="btn btn-primary" id="btn-importar-alumnos-confirmar" disabled>Importar / actualizar alumnos</button>
       </div>
 
       <div class="alert alert-secondary mt-4">
         <strong>Columnas que reconoce la plantilla</strong> (los nombres de encabezado no son sensibles a mayúsculas/acentos):
-        Legajo, Apellido, Nombre, Email, Curso / División, Sector / Carrera, Lugar de práctica, Tipo (interna/externa/interescolar),
+        Legajo, Apellido, Nombre, Email, Teléfono, Curso / División, Sector / Carrera, Lugar de práctica, Tipo (interna/externa/interescolar),
         Fecha inicio (AAAA-MM-DD o DD/MM/AAAA), Fecha fin, Hora inicio, Hora fin, <strong>Horas x día</strong>,
         <strong>Días por semana</strong> (o "Cantidad de días semanales"), Horas totales, Tutor responsable, Email del tutor,
         Contacto, Presente (si/no), Estado (realizada/pendiente), Observaciones asistencia, Notas práctica.
@@ -942,19 +958,23 @@
       <h5>Mi asistencia</h5><div class="table-responsive"><table class="table table-bordered"><thead><tr><th>Fecha</th><th>Lugar</th><th>Estado</th><th>Horario</th><th>Observación</th></tr></thead><tbody id="tabla-mi-asistencia"></tbody></table></div>
     </section>
 
-    <!-- ---------- FUSIONAR DUPLICADOS ---------- -->
+    <!-- ---------- OPTIMIZAR DATOS ---------- -->
     <section class="vista" id="vista-duplicados">
-      <h3>Fusionar alumnos duplicados</h3>
-      <p class="text-muted">
-        Busca alumnos que probablemente son la misma persona (mismo legajo, ignorando ceros a la
-        izquierda y separadores, o mismo nombre y apellido) y te deja unificarlos en un solo
-        registro: todas sus prácticas, asistencias y faltas se pasan al que elijas conservar, y
-        el/los otro(s) registro(s) se eliminan. <strong>Esta acción no se puede deshacer</strong>,
-        revisá bien cada grupo antes de fusionar.
-      </p>
-      <button class="btn btn-outline-secondary btn-sm mb-3" id="btn-buscar-duplicados">Buscar duplicados</button>
-      <div id="duplicados-resumen" class="text-muted mb-2"></div>
-      <div id="duplicados-lista"></div>
+      <h3>Optimizar datos</h3>
+      <div class="card card-alumnos p-3 shadow-sm mb-4">
+        <h5>Fusionar alumnos duplicados</h5>
+        <p class="text-muted">Busca coincidencias por legajo o por nombre y apellido. Conserva el registro que elijas y le transfiere las prácticas, asistencias y faltas.</p>
+        <div><button class="btn btn-outline-secondary btn-sm mb-3" id="btn-buscar-duplicados">Buscar duplicados</button></div>
+        <div id="duplicados-resumen" class="text-muted mb-2"></div>
+        <div id="duplicados-lista"></div>
+      </div>
+      <div class="card card-practicas p-3 shadow-sm">
+        <h5>Agrupar prácticas correlativas por semana</h5>
+        <p class="text-muted">Detecta jornadas consecutivas del mismo alumno, lugar y sector dentro de una misma semana. Al agrupar, conserva las horas totales y los vínculos con asistencias e informes.</p>
+        <div><button class="btn btn-outline-primary btn-sm mb-3" id="btn-buscar-practicas-correlativas">Buscar períodos agrupables</button></div>
+        <div id="practicas-correlativas-resumen" class="text-muted mb-2"></div>
+        <div id="practicas-correlativas-lista"></div>
+      </div>
     </section>
 
   </div>
@@ -970,7 +990,8 @@
       <label class="col-md-6"><input type="checkbox" value="inasistencias" checked> Inasistencias</label>
       <label class="col-md-6"><input type="checkbox" value="tardanzas" checked> Tardanzas</label>
       <label class="col-md-6"><input type="checkbox" value="informes" checked> Informes presentados</label>
-      <label class="col-md-6"><input type="checkbox" value="practicas" checked> Detalle de prácticas</label>
+      <label class="col-md-6"><input type="checkbox" value="practicas" checked> Prácticas realizadas</label>
+      <label class="col-md-6"><input type="checkbox" value="devolucion" checked> Devolución / observaciones docentes</label>
     </div>
     <label class="form-label">Devolución / observaciones</label><textarea class="form-control" id="pdf-devolucion" rows="5" placeholder="Escribí aquí la devolución para el alumno..."></textarea>
   </div><div class="modal-footer"><button class="btn btn-danger" id="btn-generar-pdf" type="button">Generar PDF</button></div>
