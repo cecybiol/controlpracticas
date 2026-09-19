@@ -300,8 +300,15 @@
 
       <div class="card p-3 shadow-sm mb-4">
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-          <h5 class="mb-0">Alumnos con menos horas realizadas (internas + externas)</h5>
+          <h5 class="mb-0">Alumnos con menos horas realizadas</h5>
           <div class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 small text-muted">Tipo</label>
+            <select class="form-select form-select-sm" style="width:auto" id="estad-atencion-tipo">
+              <option value="todas">Todas</option>
+              <option value="interna">Internas</option>
+              <option value="externa">Externas</option>
+              <option value="interescolar">Interescolares</option>
+            </select>
             <label class="form-label mb-0 small text-muted">Mostrar</label>
             <select class="form-select form-select-sm" style="width:auto" id="estad-atencion-cantidad">
               <option value="5">5</option>
@@ -311,13 +318,13 @@
             </select>
           </div>
         </div>
-        <p class="text-muted small mb-2">No cuenta horas interescolares: pensado para detectar rápido a quién le falta arrancar o avanzar en prácticas internas/externas.</p>
+        <p class="text-muted small mb-2" id="estad-atencion-ayuda">Ordena de menor a mayor según las horas del tipo seleccionado.</p>
         <div class="table-responsive">
           <table class="table table-sm table-bordered align-middle mb-0">
             <thead>
               <tr>
-                <th>Alumno</th><th>Legajo</th><th>Curso</th><th>Internas</th><th>Externas</th>
-                <th>Total int.+ext.</th><th>% cumplido</th><th></th>
+                <th>Alumno</th><th>Legajo</th><th>Curso</th><th>Internas</th><th>Externas</th><th>Interescolares</th>
+                <th id="estad-atencion-columna">Horas seleccionadas</th><th>% objetivo</th><th></th>
               </tr>
             </thead>
             <tbody id="tabla-estad-atencion"></tbody>
@@ -541,7 +548,7 @@
     <section class="vista" id="vista-informes">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h3>Informes de PP presentados</h3>
-        <button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button>
+        <div class="d-flex gap-2"><button class="btn btn-outline-danger btn-sm" id="btn-abrir-generador-pdf">Generar informe PDF</button><button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button></div>
       </div>
       <div class="row g-2 mb-3">
         <div class="col-md-3"><input class="form-control" id="if-alumno" placeholder="Alumno o legajo"></div>
@@ -981,9 +988,22 @@
 </div>
 
 <!-- Informe PDF configurable -->
-<div class="modal fade" id="modal-informe-pdf" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+<div class="modal fade" id="modal-informe-pdf" tabindex="-1"><div class="modal-dialog modal-xl"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title">Generar informe del alumno</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body"><input type="hidden" id="pdf-alumno-id"><p class="text-muted">Seleccioná qué información incluir:</p>
+  <div class="modal-body"><input type="hidden" id="pdf-alumno-id">
+    <h6>Alumnos</h6>
+    <div class="row g-2 mb-3">
+      <div class="col-md-5"><input class="form-control form-control-sm" id="pdf-buscar-alumno" placeholder="Buscar por nombre o legajo"></div>
+      <div class="col-md-7 d-flex align-items-center gap-2"><label class="small"><input type="checkbox" id="pdf-seleccionar-todos"> Seleccionar todos los visibles</label><span class="text-muted small" id="pdf-alumnos-contador"></span></div>
+      <div class="col-12"><div class="selector-alumnos" id="pdf-alumnos-selector"></div></div>
+    </div>
+    <h6>Alcance del informe</h6>
+    <div class="row g-2 mb-3">
+      <div class="col-md-4"><label class="form-label">Tipo de práctica</label><select class="form-select" id="pdf-filtro-tipo"><option value="">Todos los tipos</option><option value="interna">Interna</option><option value="externa">Externa</option><option value="interescolar">Interescolar</option></select></div>
+      <div class="col-md-4"><label class="form-label">Lugar</label><select class="form-select" id="pdf-filtro-lugar"><option value="">Todos los lugares</option></select></div>
+      <div class="col-md-4"><label class="form-label">Sector</label><select class="form-select" id="pdf-filtro-sector"><option value="">Todos los sectores</option></select></div>
+    </div>
+    <p class="text-muted">Seleccioná qué información incluir:</p>
     <div class="row g-2 mb-3" id="pdf-opciones">
       <label class="col-md-6"><input type="checkbox" value="datos" checked> Datos personales</label>
       <label class="col-md-6"><input type="checkbox" value="horas" checked> Horas realizadas por sector</label>
