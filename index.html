@@ -19,6 +19,10 @@
   .dashboard-widget.oculto-config { display: none !important; }
   .dias-semana-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; }
   .estado-asistencia { min-width: 185px; }
+  .navbar-nav .nav-link { font-size: .88rem; white-space: nowrap; padding-left: .45rem !important; padding-right: .45rem !important; }
+  .navbar-nav { flex-wrap: wrap; }
+  .tabla-practicas th { white-space: nowrap; font-size: .82rem; vertical-align: middle; }
+  .tabla-practicas td { vertical-align: middle; }
   .vista { display: none; }
   .vista.activa { display: block; }
   /* Color de referencia por tipo de práctica, para distinguirlas de un
@@ -67,25 +71,25 @@
 <div id="app-shell" class="d-none">
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-      <span class="navbar-brand d-flex align-items-center"><img src="img/guemes.png" alt="Logo Escuela Técnica N.° 10" class="logo-nav">Prácticas Profesionalizantes</span>
+      <span class="navbar-brand d-flex align-items-center" title="Prácticas Profesionalizantes"><img src="img/guemes.png" alt="Logo Escuela Técnica N.° 10" class="logo-nav">PP · ET N.° 10</span>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
         <span class="navbar-toggler-icon"></span>
       </button>
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav me-auto">
-          <li class="nav-item"><a class="nav-link" href="#" data-view="dashboard">Horas / Dashboard</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="dashboard">Inicio</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="estadisticas">Estadísticas</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Carga de prácticas</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="informes">Informes PP</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="resumen">Resumen por práctica</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="drive">Buscar en Drive</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Prácticas</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="informes">Informes</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="resumen">Resumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="drive">Drive</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="asistencia">Asistencia</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="notificaciones">Notificaciones</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="notificaciones">Avisos</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="alumnos">Alumnos</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar planilla</a></li>
-          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Fusionar duplicados</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Duplicados</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="usuarios">Usuarios</a></li>
-          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="configuracion">Configuración</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="configuracion">Config.</a></li>
         </ul>
         <span class="navbar-text text-light me-3" id="usuario-actual"></span>
         <button class="btn btn-outline-light btn-sm" id="btn-logout">Salir</button>
@@ -301,7 +305,8 @@
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-alumnos-masivo">Eliminar seleccionados</button>
         <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-alumnos">Exportar a Excel</button>
       </div>
-      <table class="table table-bordered">
+      <div class="table-responsive">
+      <table class="table table-bordered tabla-practicas">
         <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso / división</th><th>Sector / carrera</th><th>Email</th><th></th></tr></thead>
         <tbody id="tabla-alumnos"></tbody>
       </table>
@@ -385,17 +390,18 @@
         <thead>
           <tr>
             <th><input type="checkbox" id="chk-todas-practicas"></th>
-            <th>Fecha<br><small class="text-muted fw-normal">inicio → fin</small></th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
-            <th>Horario<br><small class="text-muted fw-normal">entrada - salida</small></th>
-            <th>Horas x día<br><small class="text-muted fw-normal">(editable)</small></th>
-            <th>Días/sem<br><small class="text-muted fw-normal">(editable)</small></th>
-            <th>Horas totales<br><small class="text-muted fw-normal">de esta práctica</small></th>
-            <th>Horas realizadas (alumno)</th><th>Horas totales (alumno)</th>
+            <th>Período</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
+            <th>Horario</th>
+            <th>Hs./día</th>
+            <th>Días/sem.</th>
+            <th>Hs. práctica</th>
+            <th>Hs. realizadas</th><th>Hs. alumno</th>
             <th>Tutor</th><th>Contacto</th><th colspan="2"></th>
           </tr>
         </thead>
         <tbody id="tabla-practicas"></tbody>
       </table>
+      </div>
     </section>
 
     <div class="modal fade" id="modal-practica" tabindex="-1">

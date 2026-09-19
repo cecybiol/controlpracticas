@@ -130,8 +130,8 @@ function calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, dias
   const dias = diasEntreISO(fechaISO, fechaFinISO);
   if (!Number.isFinite(dias) || dias < 1) return 0;
   if (dias <= 1) return +horasPorDia.toFixed(2);
-  const diasSemana = Math.min(7, Math.max(1, diasPorSemana || 5));
-  const diasDePractica = Math.max(1, Math.round((dias / 7) * diasSemana));
+  const cantidadDiasSemana = Math.min(7, Math.max(1, diasPorSemana || 5));
+  const diasDePractica = Math.max(1, Math.round((dias / 7) * cantidadDiasSemana));
   return +(diasDePractica * horasPorDia).toFixed(2);
 }
 
