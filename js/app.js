@@ -31,6 +31,9 @@ let ultimosArchivosDrive = []; // últimos resultados de la tabla "Buscar en Dri
 let filasRegistrarDrive = []; // filas del modal "Registrar informes desde Drive", con el archivo original de cada una
 let ultimosGruposDuplicados = null; // { grupos, practicas, asistencias, faltas } calculado por cargarDuplicados, para que window.fusionarGrupo no tenga que volver a pedirle todo a Firestore
 let ultimosGruposCorrelativos = null; // prácticas de jornadas consecutivas listas para agrupar por semana
+let ultimoCalculoEstadisticas = [];
+let estadOrden = { campo: "nombre", asc: true };
+let objetivoHoras = { interna: 0, externa: 0, interescolar: 0 };
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -231,6 +234,31 @@ function prepararTablasResponsivasYPaginadas() {
   });
 }
 prepararTablasResponsivasYPaginadas();
+
+// Las tarjetas principales pueden contraerse para que las páginas extensas
+// sean más fáciles de recorrer. Se excluyen filtros horizontales y tarjetas
+// internas de indicadores para no alterar su grilla.
+function prepararSeccionesDesplegables() {
+  const tarjetas = [...new Set(document.querySelectorAll(".vista > .card:not(.row):not(.filtros-horizontales), .vista > form.card:not(.row), .vista .dashboard-widget:not(.row), .vista > .table-responsive"))];
+  tarjetas.forEach((card, indice) => {
+    if (card.dataset.desplegablePreparado) return;
+    card.dataset.desplegablePreparado = "1";
+    card.classList.add("seccion-colapsable");
+    const titulo = card.querySelector("h3,h4,h5,h6")?.textContent.trim() || card.previousElementSibling?.textContent?.trim().slice(0,60) || `Sección ${indice + 1}`;
+    const contenido = document.createElement("div"); contenido.className = "seccion-contenido";
+    while (card.firstChild) contenido.appendChild(card.firstChild);
+    const barra = document.createElement("div"); barra.className = "seccion-toggle-barra";
+    const boton = document.createElement("button"); boton.type = "button"; boton.className = "btn btn-sm btn-outline-secondary";
+    boton.textContent = `Contraer: ${titulo}`; boton.setAttribute("aria-expanded", "true");
+    boton.addEventListener("click", () => {
+      const cerrar = !contenido.classList.contains("d-none");
+      contenido.classList.toggle("d-none", cerrar); card.classList.toggle("seccion-cerrada", cerrar);
+      boton.textContent = `${cerrar ? "Desplegar" : "Contraer"}: ${titulo}`; boton.setAttribute("aria-expanded", String(!cerrar));
+    });
+    barra.appendChild(boton); card.append(barra, contenido);
+  });
+}
+prepararSeccionesDesplegables();
 
 function mostrarVista(nombre) {
   if (usuarioActual?.rol === "alumno" && !["mi-practica"].includes(nombre)) nombre = "mi-practica";
@@ -1059,13 +1087,15 @@ async function cargarInformes() {
       const faltantes = realizadas.filter(p => !cubiertas.has(p.id));
       const completo = faltantes.length === 0;
       const detalleFaltantes = faltantes.map(p => `${p.lugar} (${fmtRangoFechas(p)})`).join("; ");
+      const detalleFaltantesHTML = faltantes.map(p => `<div class="mb-1">${badgeTipo(p.tipo)} <strong>${escaparHTML(p.lugar||"Sin lugar")}</strong> · ${escaparHTML(p.sector||"Sin sector")} · ${fmtRangoFechas(p)}</div>`).join("");
       return `<tr class="${completo ? "table-success" : "table-danger"}">
         <td>${escaparHTML(mapaAlumnos[alumnoId] ? nombreCompleto(mapaAlumnos[alumnoId]) : "Alumno no encontrado")}</td>
         <td>${realizadas.length}</td>
         <td>${cubiertas.size}</td>
+        <td>${completo ? `<span class="text-success">Ninguna</span>` : detalleFaltantesHTML}</td>
         <td><span class="badge bg-${completo ? "success" : "danger"}" ${detalleFaltantes ? `title="${escaparHTML(detalleFaltantes)}"` : ""}>${completo ? "Completo" : `Faltan ${faltantes.length}`}</span></td>
       </tr>`;
-    }).join("") || `<tr><td colspan="4" class="text-muted">No hay prácticas realizadas para los filtros seleccionados.</td></tr>`;
+    }).join("") || `<tr><td colspan="5" class="text-muted">No hay prácticas realizadas para los filtros seleccionados.</td></tr>`;
 
   const informes = todosInformes.filter(i => {
     const alumno = mapaAlumnos[i.alumnoId];
@@ -1792,11 +1822,13 @@ async function renderProximasYHistorial() {
 
   document.getElementById("tabla-notif-proximas").innerHTML = proximas.map(p => `
     <tr>
+      <td><input type="checkbox" class="chk-notif-practica" value="${p.id}" checked></td>
       <td>${fmtFecha(p.fecha)}</td>
       <td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td>
       <td>${mapaAlumnos[p.alumnoId]?.email || "(sin email)"}</td>
       <td>${p.lugar}</td>
-    </tr>`).join("") || `<tr><td colspan="4" class="text-muted">No hay prácticas próximas en ese rango.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="5" class="text-muted">No hay prácticas próximas en ese rango.</td></tr>`;
+  document.getElementById("chk-todas-notificaciones").checked = proximas.length > 0;
 
   document.getElementById("btn-notif-enviar").dataset.proximas = JSON.stringify(proximas);
 
@@ -1805,7 +1837,7 @@ async function renderProximasYHistorial() {
   document.getElementById("tabla-notif-historial").innerHTML = historial.map(h => `
     <tr>
       <td>${new Date(h.fechaEnvio).toLocaleString()}</td>
-      <td>${mapaAlumnos[h.alumnoId] ? nombreCompleto(mapaAlumnos[h.alumnoId]) : h.alumnoId}</td>
+      <td>${h.tipo === "correo_particular" ? `${escaparHTML(h.nombreDestinatario||"Destinatario particular")} (${escaparHTML(h.destinatario||"")})` : (mapaAlumnos[h.alumnoId] ? nombreCompleto(mapaAlumnos[h.alumnoId]) : h.alumnoId)}</td>
       <td>${h.origen === "automatico" ? "Automático" : "Manual"}</td>
       <td><span class="badge bg-${h.estado === "enviado" ? "success" : "danger"}">${h.estado}</span></td>
       <td>${h.detalle || "-"}</td>
@@ -1813,6 +1845,14 @@ async function renderProximasYHistorial() {
 }
 
 document.getElementById("notif-dias").addEventListener("input", renderProximasYHistorial);
+document.getElementById("chk-todas-notificaciones").addEventListener("change", e => {
+  document.querySelectorAll(".chk-notif-practica").forEach(x=>x.checked=e.target.checked);
+});
+document.getElementById("tabla-notif-proximas").addEventListener("change", e => {
+  if(!e.target.classList.contains("chk-notif-practica"))return;
+  const checks=[...document.querySelectorAll(".chk-notif-practica")];
+  document.getElementById("chk-todas-notificaciones").checked=checks.length>0&&checks.every(x=>x.checked);
+});
 
 /** Lee un archivo (PDF) y lo devuelve como data URL en base64, para usarlo como adjunto dinámico de EmailJS. */
 function leerArchivoComoBase64(file) {
@@ -1897,8 +1937,10 @@ document.getElementById("btn-notif-enviar").addEventListener("click", async (e) 
     const dias = Number(document.getElementById("notif-dias").value);
     if (!Number.isInteger(dias) || dias < 0) throw new Error("Ingresá una cantidad válida de días.");
     const hoy = hoyISO(), limite = sumarDiasISO(hoy, dias);
-    const proximas = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado);
-    if (!proximas.length) { mostrarAlerta("No hay prácticas pendientes sin avisar en este rango.", "info"); return; }
+    const idsElegidos = new Set([...document.querySelectorAll(".chk-notif-practica:checked")].map(x=>x.value));
+    if (!idsElegidos.size) throw new Error("Seleccioná al menos un destinatario de la lista.");
+    const proximas = (await obtenerPracticas()).filter(p => idsElegidos.has(p.id) && p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado);
+    if (!proximas.length) { mostrarAlerta("Los recordatorios seleccionados ya no están disponibles para enviar.", "info"); return; }
     const config = await obtenerConfigNotificaciones();
     const archivo = document.getElementById("notif-adjunto").files[0];
     if (archivo && (!/\.pdf$/i.test(archivo.name) || (archivo.type && archivo.type !== "application/pdf"))) throw new Error("El adjunto debe ser un PDF.");
@@ -1913,6 +1955,25 @@ document.getElementById("btn-notif-enviar").addEventListener("click", async (e) 
     await cargarNotificaciones();
   } catch (err) { mostrarAlerta(err.message || "No se pudo enviar la tanda.", "danger"); }
   finally { btn.disabled = false; btn.textContent = texto; }
+});
+
+document.getElementById("btn-notif-enviar-particular").addEventListener("click", async e => {
+  const btn=e.currentTarget, nombre=document.getElementById("notif-particular-nombre").value.trim();
+  const email=document.getElementById("notif-particular-email").value.trim(), asunto=document.getElementById("notif-particular-asunto").value.trim();
+  const mensaje=document.getElementById("notif-particular-mensaje").value.trim();
+  if(!nombre||!emailValido(email)||!asunto||!mensaje){mostrarAlerta("Completá nombre, correo válido, asunto y mensaje.","warning");return;}
+  if(envioEnCurso||btn.disabled)return;
+  btn.disabled=true;const texto=btn.textContent;btn.textContent="Enviando...";envioEnCurso=true;
+  try{
+    if(!window.emailjs||!emailjsConfigCompleta())throw new Error("Falta configurar EmailJS.");
+    await window.emailjs.send(emailjsConfig.serviceId,emailjsConfig.templateId,{to_email:email,to_name:nombre,name:nombre,apellido:"",asunto,mensaje_adicional:mensaje,lugar:"",fecha:"",horario:"",tutor:"",contacto:"",cc_email:""});
+    await addDoc(collection(db,"notificaciones_log"),{alumnoId:"",practicaId:"",tipo:"correo_particular",destinatario:email,nombreDestinatario:nombre,asunto,origen:"manual",estado:"enviado",detalle:"Aceptado por EmailJS; entrega en bandeja no confirmada",fechaEnvio:new Date().toISOString()});
+    ["notif-particular-nombre","notif-particular-email","notif-particular-asunto","notif-particular-mensaje"].forEach(id=>document.getElementById(id).value="");
+    mostrarAlerta("Correo particular aceptado por EmailJS.");await renderProximasYHistorial();
+  }catch(err){
+    try{await addDoc(collection(db,"notificaciones_log"),{alumnoId:"",practicaId:"",tipo:"correo_particular",destinatario:email,nombreDestinatario:nombre,asunto,origen:"manual",estado:"error",detalle:err.message||"Error de envío",fechaEnvio:new Date().toISOString()});}catch(_){}
+    mostrarAlerta(err.message||"No se pudo enviar el correo particular.","danger");
+  }finally{envioEnCurso=false;btn.disabled=false;btn.textContent=texto;}
 });
 
 // Revisión automática: se llama una vez al iniciar sesión. Si el envío
@@ -2152,8 +2213,6 @@ async function cargarDashboard() {
 }
 
 // --------------------------------------------------------- ESTADISTICAS -
-let ultimoCalculoEstadisticas = []; // filas ya calculadas (todas, sin buscador ni orden aplicado); se recalculan solo al traer datos nuevos de Firestore
-let estadOrden = { campo: "nombre", asc: true };
 
 // Objetivo de horas a cumplir, UNO SOLO para todo el colegio (no por curso
 // ni por alumno), con un valor independiente por tipo de práctica. Se
@@ -2161,8 +2220,6 @@ let estadOrden = { campo: "nombre", asc: true };
 // que entren a Estadísticas. Si los tres quedan en 0 (nunca se configuró),
 // se mantiene el cálculo viejo de % cumplido (contra el total propio del
 // alumno) para no romper lo que ya había.
-let objetivoHoras = { interna: 0, externa: 0, interescolar: 0 };
-
 async function cargarObjetivoHoras() {
   try {
     const snap = await getDoc(doc(db, "config", "horasRequeridas"));

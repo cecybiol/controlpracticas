@@ -46,6 +46,8 @@
   .vista table tbody tr.table-info > td { background-color: #cff4fc !important; }
   .table-responsive { width: 100%; overflow-x: auto; }
   .paginacion-tabla { display: flex; justify-content: flex-end; align-items: center; gap: .5rem; margin: .5rem 0 1rem; }
+  .seccion-toggle-barra { display:flex; justify-content:flex-end; margin-bottom:.4rem; }
+  .seccion-colapsable.seccion-cerrada { min-height:52px; }
   .selector-alumnos { max-height: 220px; overflow: auto; border: 1px solid #ced4da; border-radius: .5rem; padding: .55rem; background: #fff; }
   .selector-alumnos label { display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: .3rem; }
   .selector-alumnos label:hover { background: var(--pp-celeste); }
@@ -185,7 +187,7 @@
         </div>
       </div>
       <div class="row">
-        <div class="col-md-6 dashboard-widget" data-dashboard-widget="horasSector">
+        <div class="col-12 dashboard-widget mb-3" data-dashboard-widget="horasSector">
           <h5>Horas por sector</h5>
           <table class="table table-sm table-bordered">
             <thead><tr><th>Sector</th><th>Horas</th></tr></thead>
@@ -546,9 +548,12 @@
 
     <!-- ---------- INFORMES ---------- -->
     <section class="vista" id="vista-informes">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <h3>Informes de PP presentados</h3>
-        <div class="d-flex gap-2"><button class="btn btn-outline-danger btn-sm" id="btn-abrir-generador-pdf">Generar informe PDF</button><button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button></div>
+        <button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button>
+      </div>
+      <div class="card p-3 shadow-sm mb-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><h5 class="mb-1">Informes PDF configurables</h5><div class="text-muted small">Seleccioná alumnos, tipo de práctica, lugar, sector y las secciones que querés incluir.</div></div><button class="btn btn-danger" id="btn-abrir-generador-pdf">Generar informe PDF</button></div>
       </div>
       <div class="row g-2 mb-3">
         <div class="col-md-3"><input class="form-control" id="if-alumno" placeholder="Alumno o legajo"></div>
@@ -572,7 +577,7 @@
         <h5>Control de cumplimiento por alumno</h5>
         <p class="text-muted small">Cada práctica realizada debe tener al menos un informe presentado y vinculado. Verde: cumplimiento completo. Rojo: falta uno o más informes.</p>
         <div class="table-responsive"><table class="table table-bordered mb-0">
-          <thead><tr><th>Alumno</th><th>Prácticas realizadas</th><th>Informes presentados</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Alumno</th><th>Prácticas realizadas</th><th>Informes presentados</th><th>Prácticas sin informe</th><th>Estado</th></tr></thead>
           <tbody id="tabla-cumplimiento-informes"></tbody>
         </table></div>
       </div>
@@ -830,7 +835,7 @@
       </div>
 
       <table class="table table-bordered mb-3">
-        <thead><tr><th>Fecha</th><th>Alumno</th><th>Email</th><th>Lugar</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todas-notificaciones" checked></th><th>Fecha</th><th>Alumno</th><th>Email</th><th>Lugar</th></tr></thead>
         <tbody id="tabla-notif-proximas"></tbody>
       </table>
 
@@ -853,7 +858,18 @@
         </div>
       </div>
 
-      <button class="btn btn-primary" id="btn-notif-enviar">Enviar recordatorios ahora</button>
+      <button class="btn btn-primary" id="btn-notif-enviar">Enviar a los seleccionados</button>
+
+      <div class="card p-3 shadow-sm my-4" style="max-width:760px">
+        <h6>Enviar correo a un destinatario particular</h6>
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label">Nombre</label><input class="form-control" id="notif-particular-nombre" placeholder="Nombre del destinatario"></div>
+          <div class="col-md-6"><label class="form-label">Correo</label><input type="email" class="form-control" id="notif-particular-email" placeholder="destinatario@correo.com"></div>
+          <div class="col-12"><label class="form-label">Asunto</label><input class="form-control" id="notif-particular-asunto" placeholder="Asunto del correo"></div>
+          <div class="col-12"><label class="form-label">Mensaje</label><textarea class="form-control" id="notif-particular-mensaje" rows="4" placeholder="Escribí el mensaje"></textarea></div>
+          <div class="col-12"><div class="form-text">La plantilla de EmailJS puede utilizar las variables <code>{{asunto}}</code> y <code>{{mensaje_adicional}}</code>.</div><button class="btn btn-outline-primary mt-2" id="btn-notif-enviar-particular" type="button">Enviar correo particular</button></div>
+        </div>
+      </div>
 
       <h5 class="mt-5">Historial de envíos</h5>
       <table class="table table-bordered">
