@@ -432,7 +432,7 @@ function renderResumenAlumnosPractica() {
 document.getElementById("practica-alumno-buscar")?.addEventListener("input", renderSelectorAlumnosPractica);
 
 async function prepararListasPractica(p = {}) {
-  const [lugares, practicas] = await Promise.all([obtenerLugares(true), obtenerPracticas()]);
+  const [lugares, practicas] = await Promise.all([obtenerLugares(true).catch(() => []), obtenerPracticas()]);
   const configurarLista = (selectId, nuevoId, ocultoId, valores, actual, etiquetaNuevo) => {
     const sel = document.getElementById(selectId), nuevo = document.getElementById(nuevoId), oculto = document.getElementById(ocultoId);
     const unicos = [...new Set(valores.filter(Boolean).map(v => String(v).trim()))].sort((a,b) => a.localeCompare(b));
@@ -446,7 +446,8 @@ async function prepararListasPractica(p = {}) {
     };
     sel.onchange = sincronizar; nuevo.oninput = sincronizar;
   };
-  configurarLista("practica-lugar-select", "practica-lugar-nuevo", "practica-lugar", lugares.map(x => x.nombre), p.lugar || "", "Agregar nuevo lugar");
+  const nombresLugares = [...lugares.map(x => x.nombre), ...practicas.map(x => x.lugar)];
+  configurarLista("practica-lugar-select", "practica-lugar-nuevo", "practica-lugar", nombresLugares, p.lugar || "", "Agregar nuevo lugar");
   configurarLista("practica-sector-select", "practica-sector-nuevo", "practica-sector", practicas.map(x => x.sector), p.sector || "", "Agregar nuevo sector");
 
   const tutores = new Map();
@@ -548,7 +549,7 @@ async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
   const presentes = asistencias.filter(r => ["presente", "tardanza"].includes(r.estado || (r.presente ? "presente" : "ausente_injustificado"))).length;
   document.getElementById("alumno-seguimiento").innerHTML = `<strong>Seguimiento:</strong> ${realizadas.length} práctica(s) realizada(s), ${horas.toFixed(1)} horas contabilizadas y ${presentes}/${asistencias.length} jornadas con asistencia.`;
   document.getElementById("tabla-alumno-practicas").innerHTML = propias.map(p => `
-    <tr>
+    <tr class="tipo-${p.tipo || "interna"}">
       <td>${fmtRangoFechas(p)}</td><td>${p.lugar}</td>
       <td>${String(p.sector || "Sin especificar").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]))}</td>
       <td>${badgeTipo(p.tipo)}</td>
@@ -733,7 +734,7 @@ async function cargarPracticas() {
     const horasPorDia = p.horasPorDia ?? p.horasTotales ?? 0;
     const diasPorSemana = p.diasPorSemana ?? 5;
     return `
-    <tr>
+    <tr class="tipo-${p.tipo || "interna"}">
       <td><input type="checkbox" class="chk-practica" value="${p.id}"></td>
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
       <td>${p.lugar}</td>
@@ -1918,7 +1919,7 @@ async function cargarMiPractica() {
   const asistencias = snapAsist.docs.map(d => d.data()).sort((x,y)=>String(y.fecha).localeCompare(String(x.fecha)));
   const horas = propias.filter(practicaRealizada).reduce((t,p)=>t+numeroHoras(p.horasTotales),0);
   document.getElementById("mi-practica-datos").innerHTML = `<div class="row g-2"><div class="col-md-4"><strong>Alumno</strong><br>${escaparHTML(nombreCompleto(a))}</div><div class="col-md-3"><strong>Legajo</strong><br>${escaparHTML(a.legajo)}</div><div class="col-md-3"><strong>Curso</strong><br>${escaparHTML(a.curso || "-")}</div><div class="col-md-2"><strong>Horas realizadas</strong><br>${horas.toFixed(1)}</div></div>`;
-  document.getElementById("tabla-mi-practica").innerHTML = propias.map(p=>`<tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(p.lugar)}</td><td>${escaparHTML(p.sector||"")}</td><td>${escaparHTML(estadoPractica(p).replace("_"," "))}</td><td>${numeroHoras(p.horasTotales).toFixed(1)}</td><td>${escaparHTML(p.tutorResponsable||"")}</td></tr>`).join("") || `<tr><td colspan="6">No hay prácticas asignadas.</td></tr>`;
+  document.getElementById("tabla-mi-practica").innerHTML = propias.map(p=>`<tr class="tipo-${p.tipo || "interna"}"><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(p.lugar)}</td><td>${escaparHTML(p.sector||"")}</td><td>${escaparHTML(estadoPractica(p).replace("_"," "))}</td><td>${numeroHoras(p.horasTotales).toFixed(1)}</td><td>${escaparHTML(p.tutorResponsable||"")}</td></tr>`).join("") || `<tr><td colspan="6">No hay prácticas asignadas.</td></tr>`;
   document.getElementById("tabla-mi-asistencia").innerHTML = asistencias.map(r=>`<tr><td>${fmtFecha(r.fecha)}</td><td>${escaparHTML(r.lugar||"")}</td><td>${escaparHTML(ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"))}</td><td>${escaparHTML(`${r.horaEntrada||""} - ${r.horaSalida||""}`)}</td><td>${escaparHTML(r.observaciones||"")}</td></tr>`).join("") || `<tr><td colspan="5">Sin registros de asistencia.</td></tr>`;
 }
 

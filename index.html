@@ -32,12 +32,17 @@
   #vista-importar { --section-color: var(--pp-azul); --section-soft: var(--pp-celeste); }
   #vista-notificaciones { --section-color: #b47714; --section-soft: #fff3dc; }
   .vista > h3, .vista > .d-flex > h3 { border-left: 7px solid var(--section-color); padding-left: .7rem; color: #27343c; }
-  .vista .card { border-top: 3px solid var(--section-color); }
+  .vista .card { border-top: 3px solid var(--section-color); border-left: 5px solid var(--section-color); background: linear-gradient(110deg, var(--section-soft) 0, #fff 34%); }
+  #vista-dashboard .card:has(#stat-horas) { border-color: var(--pp-azul); background: linear-gradient(120deg,var(--pp-celeste),#fff 55%); }
+  #vista-dashboard .card:has(#stat-alumnos) { border-color: var(--pp-rojo); background: linear-gradient(120deg,var(--pp-rojo-suave),#fff 55%); }
+  #vista-dashboard .card:has(#stat-practicas) { border-color: #8e44ad; background: linear-gradient(120deg,#f0e5f5,#fff 55%); }
   .vista table thead th { background: var(--section-color); color: #fff; border-color: rgba(255,255,255,.28); vertical-align: middle; }
   .vista table thead .text-muted { color: rgba(255,255,255,.78) !important; }
-  .vista table tbody td:first-child { background: var(--section-soft); font-weight: 600; }
-  .vista table:has(thead input[type="checkbox"]) tbody td:first-child { background: #fff; font-weight: normal; }
-  .vista table:has(thead input[type="checkbox"]) tbody td:nth-child(2) { background: var(--section-soft); font-weight: 600; }
+  .vista table tbody tr:nth-child(odd) > td { background-color: var(--section-soft); }
+  .vista table tbody tr:nth-child(even) > td { background-color: #fff; }
+  .vista table tbody tr.table-danger > td { background-color: #f8d7da !important; }
+  .vista table tbody tr.table-warning > td { background-color: #fff3cd !important; }
+  .vista table tbody tr.table-info > td { background-color: #cff4fc !important; }
   .table-responsive { width: 100%; overflow-x: auto; }
   .paginacion-tabla { display: flex; justify-content: flex-end; align-items: center; gap: .5rem; margin: .5rem 0 1rem; }
   .selector-alumnos { max-height: 220px; overflow: auto; border: 1px solid #ced4da; border-radius: .5rem; padding: .55rem; background: #fff; }
@@ -46,14 +51,31 @@
   .alumnos-seleccionados { min-height: 38px; padding: .35rem; background: #f5f7f8; border-radius: .4rem; }
   .alumnos-seleccionados .badge { margin: .15rem; background: var(--pp-rojo) !important; }
   .grupo-campo { background: #f8fbfd; border: 1px solid #dbe8ee; border-radius: .55rem; padding: .75rem; height: 100%; }
+  .grupo-campo:has(#practica-alumno-checks) { border-left: 5px solid var(--pp-rojo); background: var(--pp-rojo-suave); }
+  .grupo-campo:has(#practica-lugar-select), .grupo-campo:has(#practica-sector-select) { border-left: 5px solid var(--pp-gris); background: var(--pp-gris-suave); }
+  .grupo-campo:has(#practica-tipo), .grupo-campo:has(#practica-fecha) { border-left: 5px solid var(--pp-azul); background: var(--pp-celeste); }
+  .grupo-campo:has(#practica-tutor-select), .grupo-campo:has(#practica-tutor-email) { border-left: 5px solid #b47714; background: #fff3dc; }
   .modal-xl { --bs-modal-width: 1140px; }
   .card-alumnos { border-top-color: var(--pp-rojo) !important; }
   .card-alumnos table thead th { background: var(--pp-rojo) !important; color: #fff; }
-  .card-alumnos table tbody td:first-child { background: var(--pp-rojo-suave) !important; }
+  .card-alumnos table tbody tr:nth-child(odd) > td { background: var(--pp-rojo-suave) !important; }
+  .tabla-practicas tbody tr.tipo-interna > td { background-color: #eceff1 !important; }
+  .tabla-practicas tbody tr.tipo-externa > td { background-color: #e0f6fb !important; }
+  .tabla-practicas tbody tr.tipo-interescolar > td { background-color: #f0e5f5 !important; }
+  .tabla-practicas tbody tr.tipo-interna { border-left: 5px solid #6c757d; }
+  .tabla-practicas tbody tr.tipo-externa { border-left: 5px solid #0b9fbe; }
+  .tabla-practicas tbody tr.tipo-interescolar { border-left: 5px solid #8e44ad; }
   #modal-practica { --modal-color: var(--pp-azul); } #modal-alumno, #modal-informe-pdf { --modal-color: var(--pp-rojo); } #modal-informe { --modal-color: #197d83; }
   .modal[style*="--modal-color"] .modal-content, #modal-practica .modal-content, #modal-alumno .modal-content, #modal-informe-pdf .modal-content, #modal-informe .modal-content { border-top: 5px solid var(--modal-color); }
   #modal-practica table thead th, #modal-alumno table thead th, #modal-informe-pdf table thead th, #modal-informe table thead th { background: var(--modal-color); color: #fff; }
   .filtros-horizontales .filtro-item { flex: 1 1 145px; min-width: 130px; }
+  #modal-practica .modal-dialog { height: calc(100vh - 1rem); margin-top: .5rem; margin-bottom: .5rem; }
+  #modal-practica .modal-content { max-height: calc(100vh - 1rem); overflow: hidden; }
+  #modal-practica .modal-body { max-height: calc(100vh - 145px); overflow-y: auto !important; overscroll-behavior: contain; }
+  @media (min-width: 768px) and (max-width: 1199.98px) {
+    .filtros-horizontales .filtro-item { flex: 0 0 calc(33.333% - .5rem); min-width: 0; }
+    .filtros-horizontales > .d-flex { flex: 0 0 auto; }
+  }
   @media (max-width: 767.98px) { .filtros-horizontales > div { min-width: 100%; } }
   .vista { display: none; }
   .vista.activa { display: block; }
@@ -374,7 +396,7 @@
               </div>
               <div id="alumno-seguimiento" class="alert alert-light border py-2 mb-2"></div>
               <div class="table-responsive" style="max-height:260px; overflow-y:auto;">
-                <table class="table table-sm table-bordered mb-0">
+                <table class="table table-sm table-bordered tabla-practicas mb-0">
                   <thead><tr><th>Fecha</th><th>Lugar</th><th>Sector / carrera</th><th>Tipo</th><th>Estado</th><th>Asistencia</th><th>Horas</th><th></th></tr></thead>
                   <tbody id="tabla-alumno-practicas"></tbody>
                 </table>
@@ -916,7 +938,7 @@
     <section class="vista" id="vista-mi-practica">
       <div class="d-flex justify-content-between align-items-center mb-3"><h3>Mi práctica profesionalizante</h3><button class="btn btn-outline-danger btn-sm" id="btn-mi-informe-pdf">Descargar informe PDF</button></div>
       <div id="mi-practica-datos" class="card p-3 shadow-sm mb-3"></div>
-      <div class="table-responsive"><table class="table table-bordered"><thead><tr><th>Período</th><th>Lugar</th><th>Sector</th><th>Estado</th><th>Horas</th><th>Tutor</th></tr></thead><tbody id="tabla-mi-practica"></tbody></table></div>
+      <div class="table-responsive"><table class="table table-bordered tabla-practicas"><thead><tr><th>Período</th><th>Lugar</th><th>Sector</th><th>Estado</th><th>Horas</th><th>Tutor</th></tr></thead><tbody id="tabla-mi-practica"></tbody></table></div>
       <h5>Mi asistencia</h5><div class="table-responsive"><table class="table table-bordered"><thead><tr><th>Fecha</th><th>Lugar</th><th>Estado</th><th>Horario</th><th>Observación</th></tr></thead><tbody id="tabla-mi-asistencia"></tbody></table></div>
     </section>
 
