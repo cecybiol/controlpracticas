@@ -199,7 +199,40 @@ function cerrarModal(id) {
   bootstrap.Modal.getInstance(document.getElementById(id))?.hide();
 }
 
+// Paginación visual reutilizable: toda tabla extensa muestra 20 filas por página.
+const PAGINA_TAM = 20;
+function paginarTbody(tbody, pagina = 1) {
+  const filas = [...tbody.children].filter(x => x.tagName === "TR");
+  const totalPaginas = Math.max(1, Math.ceil(filas.length / PAGINA_TAM));
+  const actual = Math.min(Math.max(1, pagina), totalPaginas);
+  filas.forEach((fila, i) => fila.classList.toggle("d-none", i < (actual - 1) * PAGINA_TAM || i >= actual * PAGINA_TAM));
+  let nav = tbody.closest("table")?.parentElement?.querySelector(":scope > .paginacion-tabla");
+  if (!nav) {
+    nav = document.createElement("div"); nav.className = "paginacion-tabla";
+    tbody.closest("table")?.insertAdjacentElement("afterend", nav);
+  }
+  nav.classList.toggle("d-none", filas.length <= PAGINA_TAM);
+  nav.innerHTML = `<button class="btn btn-sm btn-outline-secondary" ${actual === 1 ? "disabled" : ""}>Anterior</button><span class="small">Página ${actual} de ${totalPaginas} · ${filas.length} registros</span><button class="btn btn-sm btn-outline-secondary" ${actual === totalPaginas ? "disabled" : ""}>Siguiente</button>`;
+  const botones = nav.querySelectorAll("button");
+  botones[0].onclick = () => paginarTbody(tbody, actual - 1);
+  botones[1].onclick = () => paginarTbody(tbody, actual + 1);
+}
+function prepararTablasResponsivasYPaginadas() {
+  document.querySelectorAll("table").forEach(tabla => {
+    if (!tabla.parentElement.classList.contains("table-responsive")) {
+      const wrap = document.createElement("div"); wrap.className = "table-responsive";
+      tabla.parentNode.insertBefore(wrap, tabla); wrap.appendChild(tabla);
+    }
+  });
+  document.querySelectorAll("tbody[id]").forEach(tbody => {
+    paginarTbody(tbody, 1);
+    new MutationObserver(() => paginarTbody(tbody, 1)).observe(tbody, { childList: true });
+  });
+}
+prepararTablasResponsivasYPaginadas();
+
 function mostrarVista(nombre) {
+  if (usuarioActual?.rol === "alumno" && !["mi-practica"].includes(nombre)) nombre = "mi-practica";
   document.querySelectorAll(".vista").forEach(v => v.classList.remove("activa"));
   document.getElementById(`vista-${nombre}`).classList.add("activa");
   document.querySelectorAll("[data-view]").forEach(a => a.classList.remove("active"));
@@ -223,6 +256,7 @@ function cargarVista(nombre) {
     importar: () => {},
     duplicados: cargarDuplicados,
     configuracion: cargarConfiguracion,
+    "mi-practica": cargarMiPractica,
   };
   Promise.resolve().then(() => cargadores[nombre]?.()).catch(err => mostrarAlerta(`No se pudo cargar la vista: ${err.message || err}`, "danger"));
 }
@@ -264,14 +298,22 @@ onAuthStateChanged(auth, async (user) => {
     document.querySelectorAll(".admin-only").forEach(el => {
       el.classList.toggle("d-none", usuarioActual.rol !== "admin");
     });
+    document.querySelectorAll(".alumno-only").forEach(el => el.classList.toggle("d-none", usuarioActual.rol !== "alumno"));
+    document.querySelectorAll("[data-view]").forEach(enlace => {
+      const item = enlace.closest("li");
+      if (!item || item.classList.contains("admin-only") || item.classList.contains("alumno-only")) return;
+      item.classList.toggle("d-none", usuarioActual.rol === "alumno");
+    });
 
     document.getElementById("login-view").classList.add("d-none");
     document.getElementById("app-shell").classList.remove("d-none");
-    mostrarVista("dashboard");
+    mostrarVista(usuarioActual.rol === "alumno" ? "mi-practica" : "dashboard");
     await obtenerLugares();
     poblarDatalistLugares();
-    await sincronizarAsistenciasAutomaticas();
-    revisarYEnviarNotificacionesAutomaticas();
+    if (usuarioActual.rol !== "alumno") {
+      await sincronizarAsistenciasAutomaticas();
+      revisarYEnviarNotificacionesAutomaticas();
+    }
   } else {
     usuarioActual = null;
     cacheAlumnos = []; cacheLugares = [];
@@ -364,6 +406,62 @@ async function llenarSelectAlumnos(selectEl, seleccionadoId = null) {
   selectEl.innerHTML = alumnos.map(a =>
     `<option value="${a.id}" ${a.id === seleccionadoId ? "selected" : ""}>${nombreCompleto(a)} (${a.legajo})</option>`
   ).join("");
+  if (selectEl.id === "practica-alumno") renderSelectorAlumnosPractica();
+}
+
+function renderSelectorAlumnosPractica() {
+  const select = document.getElementById("practica-alumno");
+  const cont = document.getElementById("practica-alumno-checks");
+  const resumen = document.getElementById("practica-alumnos-seleccionados");
+  if (!select || !cont || !resumen) return;
+  const filtro = document.getElementById("practica-alumno-buscar")?.value.trim().toLowerCase() || "";
+  cont.innerHTML = [...select.options].filter(o => o.textContent.toLowerCase().includes(filtro)).map(o => `<label><input type="checkbox" value="${escaparHTML(o.value)}" ${o.selected ? "checked" : ""}> <span>${escaparHTML(o.textContent)}</span></label>`).join("") || `<span class="text-muted small">No se encontraron alumnos.</span>`;
+  cont.querySelectorAll("input").forEach(chk => chk.addEventListener("change", () => {
+    const opcion = [...select.options].find(o => o.value === chk.value);
+    if (opcion) opcion.selected = chk.checked;
+    renderResumenAlumnosPractica();
+  }));
+  renderResumenAlumnosPractica();
+}
+function renderResumenAlumnosPractica() {
+  const seleccionados = [...document.getElementById("practica-alumno").selectedOptions];
+  document.getElementById("practica-alumnos-seleccionados").innerHTML = seleccionados.length
+    ? seleccionados.map(o => `<span class="badge">${escaparHTML(o.textContent)}</span>`).join("")
+    : `<span class="text-muted small">Todavía no seleccionaste alumnos.</span>`;
+}
+document.getElementById("practica-alumno-buscar")?.addEventListener("input", renderSelectorAlumnosPractica);
+
+async function prepararListasPractica(p = {}) {
+  const [lugares, practicas] = await Promise.all([obtenerLugares(true), obtenerPracticas()]);
+  const configurarLista = (selectId, nuevoId, ocultoId, valores, actual, etiquetaNuevo) => {
+    const sel = document.getElementById(selectId), nuevo = document.getElementById(nuevoId), oculto = document.getElementById(ocultoId);
+    const unicos = [...new Set(valores.filter(Boolean).map(v => String(v).trim()))].sort((a,b) => a.localeCompare(b));
+    if (actual && !unicos.some(v => normalizarTexto(v) === normalizarTexto(actual))) unicos.unshift(actual);
+    sel.innerHTML = `<option value="">Seleccionar...</option>` + unicos.map(v => `<option value="${escaparHTML(v)}">${escaparHTML(v)}</option>`).join("") + `<option value="__nuevo__">+ ${etiquetaNuevo}</option>`;
+    sel.value = actual || ""; oculto.value = actual || "";
+    nuevo.classList.add("d-none"); nuevo.value = "";
+    const sincronizar = () => {
+      const esNuevo = sel.value === "__nuevo__"; nuevo.classList.toggle("d-none", !esNuevo);
+      oculto.value = esNuevo ? nuevo.value.trim() : sel.value;
+    };
+    sel.onchange = sincronizar; nuevo.oninput = sincronizar;
+  };
+  configurarLista("practica-lugar-select", "practica-lugar-nuevo", "practica-lugar", lugares.map(x => x.nombre), p.lugar || "", "Agregar nuevo lugar");
+  configurarLista("practica-sector-select", "practica-sector-nuevo", "practica-sector", practicas.map(x => x.sector), p.sector || "", "Agregar nuevo sector");
+
+  const tutores = new Map();
+  practicas.filter(x => x.tutorResponsable).forEach(x => { const k=normalizarTexto(x.tutorResponsable); if(!tutores.has(k)) tutores.set(k, { nombre:x.tutorResponsable, email:x.tutorEmail || "", contacto:x.contacto || "" }); });
+  if (p.tutorResponsable) tutores.set(normalizarTexto(p.tutorResponsable), { nombre:p.tutorResponsable, email:p.tutorEmail || "", contacto:p.contacto || "" });
+  const tutorSel = document.getElementById("practica-tutor-select");
+  tutorSel.innerHTML = `<option value="">Seleccionar...</option>` + [...tutores.values()].sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t => `<option value="${escaparHTML(t.nombre)}" data-email="${escaparHTML(t.email)}" data-contacto="${escaparHTML(t.contacto)}">${escaparHTML(t.nombre)}</option>`).join("") + `<option value="__nuevo__">+ Agregar nuevo tutor</option>`;
+  tutorSel.value = p.tutorResponsable || "";
+  const tutorInput = document.getElementById("practica-tutor"); tutorInput.value = p.tutorResponsable || ""; tutorInput.classList.toggle("d-none", !!p.tutorResponsable);
+  tutorSel.onchange = () => {
+    const nuevo = tutorSel.value === "__nuevo__";
+    tutorInput.classList.toggle("d-none", !nuevo); tutorInput.value = nuevo ? "" : tutorSel.value;
+    const op = tutorSel.selectedOptions[0];
+    if (!nuevo && op) { document.getElementById("practica-tutor-email").value = op.dataset.email || ""; document.getElementById("practica-contacto").value = op.dataset.contacto || ""; }
+  };
 }
 
 async function cargarAlumnos() {
@@ -518,10 +616,12 @@ document.getElementById("btn-alumno-nueva-practica").addEventListener("click", a
   practicaOrigenAlumnoId = alumnoId;
   cerrarModal("modal-alumno");
   document.getElementById("form-practica").reset();
+  document.getElementById("practica-alumno-buscar").value = "";
   document.getElementById("practica-id").value = "";
   document.getElementById("practica-estado").value = "programada";
   marcarDiasFormulario([1, 2, 3, 4, 5]);
   await llenarSelectAlumnos(document.getElementById("practica-alumno"), alumnoId);
+  await prepararListasPractica();
   actualizarPreviewHorasTotales();
   abrirModal("modal-practica");
 });
@@ -779,10 +879,12 @@ document.querySelectorAll("#practica-dias-selector input").forEach(x => x.addEve
 document.getElementById("btn-nueva-practica").addEventListener("click", async () => {
   practicaOrigenAlumnoId = null;
   document.getElementById("form-practica").reset();
+  document.getElementById("practica-alumno-buscar").value = "";
   document.getElementById("practica-id").value = "";
   document.getElementById("practica-estado").value = "programada";
   marcarDiasFormulario([1, 2, 3, 4, 5]);
   await llenarSelectAlumnos(document.getElementById("practica-alumno"));
+  await prepararListasPractica();
   actualizarPreviewHorasTotales();
   abrirModal("modal-practica");
 });
@@ -792,8 +894,10 @@ window.editarPractica = async (id, desdeFicha = false) => {
   const p = practicas.find(x => x.id === id);
   practicaOrigenAlumnoId = desdeFicha ? p.alumnoId : null;
   if (desdeFicha) cerrarModal("modal-alumno");
+  document.getElementById("practica-alumno-buscar").value = "";
   document.getElementById("practica-id").value = p.id;
   await llenarSelectAlumnos(document.getElementById("practica-alumno"), p.alumnoId);
+  await prepararListasPractica(p);
   document.getElementById("practica-lugar").value = p.lugar;
   // Ojo: antes esto forzaba "interna" para cualquier tipo que no fuera "externa",
   // así que al editar una práctica interescolar y guardar, se perdía el tipo.
@@ -1488,7 +1592,6 @@ async function cargarAsistencia() {
   const filtroLugar = document.getElementById("asist-filtro-lugar").value.trim().toLowerCase();
   if (filtroFecha) registros = registros.filter(r => r.fecha === filtroFecha);
   if (filtroLugar) registros = registros.filter(r => String(r.lugar || "").toLowerCase().includes(filtroLugar));
-  registros = registros.slice(0, 100);
 
   const chkTodas = document.getElementById("chk-todas-asistencia");
   if (chkTodas) chkTodas.checked = false;
@@ -1801,34 +1904,100 @@ async function revisarYEnviarNotificacionesAutomaticas() {
   } catch (err) { mostrarAlerta(err.message || "Error al revisar avisos automáticos.", "danger"); }
 }
 
+// ------------------------------------------------------- PORTAL ALUMNO --
+async function cargarMiPractica() {
+  const alumnoId = usuarioActual?.alumnoId;
+  if (!alumnoId) {
+    document.getElementById("mi-practica-datos").innerHTML = `<div class="alert alert-warning mb-0">Esta cuenta todavía no está vinculada con un alumno. Solicitá al administrador que complete la vinculación.</div>`;
+    document.getElementById("tabla-mi-practica").innerHTML = ""; document.getElementById("tabla-mi-asistencia").innerHTML = ""; return;
+  }
+  const [snapAlumno, snapPracticas, snapAsist] = await Promise.all([getDoc(doc(db,"alumnos",alumnoId)), getDocs(query(collection(db,"practicas"),where("alumnoId","==",alumnoId))), getDocs(query(collection(db,"asistencias"), where("alumnoId","==",alumnoId)))]);
+  if (!snapAlumno.exists()) return;
+  const a = { id: snapAlumno.id, ...snapAlumno.data() };
+  const propias = snapPracticas.docs.map(d=>({id:d.id,...d.data()}));
+  const asistencias = snapAsist.docs.map(d => d.data()).sort((x,y)=>String(y.fecha).localeCompare(String(x.fecha)));
+  const horas = propias.filter(practicaRealizada).reduce((t,p)=>t+numeroHoras(p.horasTotales),0);
+  document.getElementById("mi-practica-datos").innerHTML = `<div class="row g-2"><div class="col-md-4"><strong>Alumno</strong><br>${escaparHTML(nombreCompleto(a))}</div><div class="col-md-3"><strong>Legajo</strong><br>${escaparHTML(a.legajo)}</div><div class="col-md-3"><strong>Curso</strong><br>${escaparHTML(a.curso || "-")}</div><div class="col-md-2"><strong>Horas realizadas</strong><br>${horas.toFixed(1)}</div></div>`;
+  document.getElementById("tabla-mi-practica").innerHTML = propias.map(p=>`<tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(p.lugar)}</td><td>${escaparHTML(p.sector||"")}</td><td>${escaparHTML(estadoPractica(p).replace("_"," "))}</td><td>${numeroHoras(p.horasTotales).toFixed(1)}</td><td>${escaparHTML(p.tutorResponsable||"")}</td></tr>`).join("") || `<tr><td colspan="6">No hay prácticas asignadas.</td></tr>`;
+  document.getElementById("tabla-mi-asistencia").innerHTML = asistencias.map(r=>`<tr><td>${fmtFecha(r.fecha)}</td><td>${escaparHTML(r.lugar||"")}</td><td>${escaparHTML(ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"))}</td><td>${escaparHTML(`${r.horaEntrada||""} - ${r.horaSalida||""}`)}</td><td>${escaparHTML(r.observaciones||"")}</td></tr>`).join("") || `<tr><td colspan="5">Sin registros de asistencia.</td></tr>`;
+}
+
+function abrirInformePDF(alumnoId) {
+  if (!alumnoId) { mostrarAlerta("No hay un alumno vinculado para generar el informe.", "warning"); return; }
+  document.getElementById("pdf-alumno-id").value = alumnoId;
+  const devolucion = document.getElementById("pdf-devolucion");
+  devolucion.value = ""; devolucion.disabled = usuarioActual?.rol === "alumno";
+  devolucion.placeholder = usuarioActual?.rol === "alumno" ? "La devolución la completa el equipo docente." : "Escribí aquí la devolución para el alumno...";
+  abrirModal("modal-informe-pdf");
+}
+document.getElementById("btn-informe-pdf-alumno").addEventListener("click", () => abrirInformePDF(document.getElementById("alumno-id").value));
+document.getElementById("btn-mi-informe-pdf").addEventListener("click", () => abrirInformePDF(usuarioActual?.alumnoId));
+
+async function imagenADataURL(url) {
+  const blob = await (await fetch(url)).blob();
+  return await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
+}
+document.getElementById("btn-generar-pdf").addEventListener("click", async () => {
+  const alumnoId = document.getElementById("pdf-alumno-id").value;
+  const opciones = new Set([...document.querySelectorAll("#pdf-opciones input:checked")].map(x=>x.value));
+  if (!opciones.size) { mostrarAlerta("Seleccioná al menos una sección.", "warning"); return; }
+  if (!window.jspdf?.jsPDF) { mostrarAlerta("No se cargó el generador PDF. Recargá la página.", "danger"); return; }
+  const btn = document.getElementById("btn-generar-pdf"); btn.disabled = true;
+  try {
+    const [snapA, practicas, snapAsist, snapInformes] = await Promise.all([
+      getDoc(doc(db,"alumnos",alumnoId)), getDocs(query(collection(db,"practicas"),where("alumnoId","==",alumnoId))),
+      getDocs(query(collection(db,"asistencias"),where("alumnoId","==",alumnoId))),
+      getDocs(query(collection(db,"informes"),where("alumnoId","==",alumnoId))),
+    ]);
+    if (!snapA.exists()) throw new Error("Alumno no encontrado.");
+    const a={id:snapA.id,...snapA.data()}, propias=practicas.docs.map(d=>({id:d.id,...d.data()})), asist=snapAsist.docs.map(d=>d.data()), informes=snapInformes.docs.map(d=>d.data());
+    const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:"mm",format:"a4"});
+    const logo = await imagenADataURL("img/guemes.png").catch(()=>"");
+    const encabezado = () => { if(logo) pdf.addImage(logo,"PNG",12,8,22,22); pdf.setTextColor(7,84,127); pdf.setFontSize(15); pdf.text("Escuela Técnica N.° 10",40,15); pdf.setFontSize(11); pdf.text("Prácticas Profesionalizantes",40,22); pdf.setDrawColor(5,143,208); pdf.line(12,33,198,33); };
+    encabezado(); let y=40;
+    pdf.setTextColor(30); pdf.setFontSize(14); pdf.text(`Informe de ${nombreCompleto(a)}`,12,y); y+=7;
+    const tabla = (titulo, head, body) => { pdf.setFontSize(11); pdf.setTextColor(165,48,43); pdf.text(titulo,12,y); y+=2; pdf.autoTable({startY:y,head:[head],body,theme:"grid",headStyles:{fillColor:[5,143,208]},styles:{fontSize:8},margin:{left:12,right:12,top:38},didDrawPage:()=>{if(pdf.internal.getNumberOfPages()>1) encabezado();}}); y=pdf.lastAutoTable.finalY+8; if(y>265){pdf.addPage(); encabezado(); y=40;} };
+    if(opciones.has("datos")) tabla("Datos personales",["Dato","Información"],[["Legajo",a.legajo||""],["Curso / división",a.curso||""],["Sector / carrera",a.sector||""],["Email",a.email||""]]);
+    if(opciones.has("horas")){const por={};propias.filter(practicaRealizada).forEach(p=>por[p.sector||"Sin sector"]=(por[p.sector||"Sin sector"]||0)+numeroHoras(p.horasTotales));tabla("Horas realizadas por sector",["Sector","Horas"],Object.entries(por).map(([s,h])=>[s,h.toFixed(1)]));}
+    if(opciones.has("practicas")) tabla("Prácticas",["Período","Lugar","Sector","Estado","Horas"],propias.map(p=>[fmtRangoFechas(p),p.lugar||"",p.sector||"",estadoPractica(p).replace("_"," "),numeroHoras(p.horasTotales).toFixed(1)]));
+    if(opciones.has("inasistencias")) tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asist.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado],r.observaciones||""]));
+    if(opciones.has("tardanzas")) tabla("Tardanzas",["Fecha","Lugar","Horario","Observación"],asist.filter(r=>r.estado==="tardanza").map(r=>[fmtFecha(r.fecha),r.lugar||"",`${r.horaEntrada||""}-${r.horaSalida||""}`,r.observaciones||""]));
+    if(opciones.has("informes")) tabla("Informes presentados",["Fecha","Título","Estado","Observación"],informes.map(i=>[fmtFecha(i.fecha),i.titulo||"",i.estado||"",i.observaciones||""]));
+    const devolucion=document.getElementById("pdf-devolucion").value.trim(); if(devolucion){pdf.setTextColor(165,48,43);pdf.setFontSize(11);pdf.text("Devolución / observaciones",12,y);pdf.setTextColor(30);pdf.setFontSize(9);pdf.text(pdf.splitTextToSize(devolucion,184),12,y+6);}
+    const paginas=pdf.internal.getNumberOfPages();for(let i=1;i<=paginas;i++){pdf.setPage(i);pdf.setFontSize(8);pdf.setTextColor(100);pdf.text(`Generado ${new Date().toLocaleDateString("es-AR")} · Página ${i} de ${paginas}`,105,291,{align:"center"});}
+    pdf.save(`informe_${String(a.apellido||"alumno").replace(/\s+/g,"_")}_${hoyISO()}.pdf`); cerrarModal("modal-informe-pdf");
+  } catch(err){mostrarAlerta(err.message||"No se pudo generar el PDF.","danger");} finally{btn.disabled=false;}
+});
+
 // ------------------------------------------------------------- USUARIOS -
 async function cargarUsuarios() {
-  const snap = await getDocs(collection(db, "usuarios"));
+  const [snap, alumnos] = await Promise.all([getDocs(collection(db, "usuarios")), obtenerAlumnos()]);
   const usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
   document.getElementById("usuarios-count").textContent = usuarios.length;
   document.getElementById("tabla-usuarios").innerHTML = usuarios.map(u => `
-    <tr><td>${u.nombre}</td><td>${u.email}</td><td>${u.rol}</td></tr>
-  `).join("") || `<tr><td colspan="3" class="text-muted">No hay perfiles cargados todavía.</td></tr>`;
-
-  const formUsuario = document.getElementById("form-usuario");
-  formUsuario.classList.toggle("d-none", usuarios.length >= 3 && !formUsuario.dataset.editando);
+    <tr><td>${escaparHTML(u.nombre)}</td><td>${escaparHTML(u.email)}</td><td>${escaparHTML(u.rol)}</td><td>${u.alumnoId && mapaAlumnos[u.alumnoId] ? escaparHTML(nombreCompleto(mapaAlumnos[u.alumnoId])) : "-"}</td></tr>
+  `).join("") || `<tr><td colspan="4" class="text-muted">No hay perfiles cargados todavía.</td></tr>`;
+  const selAlumno = document.getElementById("usuario-alumno-id");
+  selAlumno.innerHTML = `<option value="">Seleccionar alumno</option>` + alumnos.map(a => `<option value="${a.id}">${escaparHTML(nombreCompleto(a))} (${escaparHTML(a.legajo)})</option>`).join("");
 }
+
+document.getElementById("usuario-rol").addEventListener("change", (e) => document.getElementById("usuario-alumno-wrap").classList.toggle("d-none", e.target.value !== "alumno"));
 
 document.getElementById("form-usuario").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const snap = await getDocs(collection(db, "usuarios"));
   const uid = document.getElementById("usuario-uid").value.trim();
-  const yaExiste = snap.docs.some(d => d.id === uid);
-  if (snap.size >= 3 && !yaExiste) {
-    mostrarAlerta("Ya hay 3 usuarios cargados (el máximo permitido).", "danger");
-    return;
-  }
+  const rol = document.getElementById("usuario-rol").value;
+  const alumnoId = document.getElementById("usuario-alumno-id").value;
+  if (rol === "alumno" && !alumnoId) { mostrarAlerta("Vinculá la cuenta con un alumno.", "warning"); return; }
   await setDoc(doc(db, "usuarios", uid), {
     nombre: document.getElementById("usuario-nombre").value.trim(),
     email: document.getElementById("usuario-email").value.trim(),
-    rol: document.getElementById("usuario-rol").value,
+    rol,
+    alumnoId: rol === "alumno" ? alumnoId : "",
   });
   document.getElementById("form-usuario").reset();
+  document.getElementById("usuario-alumno-wrap").classList.add("d-none");
   mostrarAlerta("Usuario guardado.");
   cargarUsuarios();
 });
@@ -2488,6 +2657,36 @@ document.getElementById("btn-importar-confirmar").addEventListener("click", asyn
   renderPreviewImportar();
   document.getElementById("importar-archivo").value = "";
   btn.textContent = textoOriginal;
+});
+
+// Importación independiente de alumnos: alta o actualización por legajo/DNI.
+let filasImportarAlumnos = [];
+document.getElementById("btn-alumnos-plantilla").addEventListener("click", () => {
+  const datos=[["Legajo","Apellido","Nombre","Email","Curso / División","Sector / Carrera"],["48354207","Calvo Albornoz","Alma Valentina","alumno@sanluis.edu.ar","7 B","Informática"]];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(datos),"Alumnos");XLSX.writeFile(wb,"plantilla_alumnos.xlsx");
+});
+async function leerPlanilla(file){
+  const wb=/\.csv$/i.test(file.name)?XLSX.read(await file.text(),{type:"string",cellDates:true}):XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:"",raw:false});
+}
+document.getElementById("importar-alumnos-archivo").addEventListener("change", async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{
+    const crudas=await leerPlanilla(file), existentes=await obtenerAlumnos(true), porLegajo=Object.fromEntries(existentes.map(a=>[normalizarLegajo(a.legajo),a]));
+    filasImportarAlumnos=crudas.map((cruda,i)=>{const d=mapearFila(cruda), errores=[];if(!d.legajo)errores.push("Falta legajo");if(!d.apellido)errores.push("Falta apellido");if(!d.nombre)errores.push("Falta nombre");const existente=porLegajo[normalizarLegajo(d.legajo)];return{fila:i+2,d,existente,errores};});
+    renderImportarAlumnos();
+  }catch(err){mostrarAlerta("No se pudo leer la planilla de alumnos.","danger");}
+});
+function renderImportarAlumnos(){
+  const validas=filasImportarAlumnos.filter(f=>!f.errores.length).length;
+  document.getElementById("importar-alumnos-resumen").innerHTML=`Filas: <strong>${filasImportarAlumnos.length}</strong> · Válidas: <strong class="text-success">${validas}</strong> · Se actualizarán: <strong>${filasImportarAlumnos.filter(f=>f.existente&&!f.errores.length).length}</strong>`;
+  document.getElementById("tabla-importar-alumnos").innerHTML=filasImportarAlumnos.map(f=>`<tr class="${f.errores.length?"table-danger":f.existente?"table-info":""}"><td>${f.fila}</td><td>${escaparHTML(f.d.legajo)}</td><td>${escaparHTML(`${f.d.apellido} ${f.d.nombre}`)}</td><td>${escaparHTML(f.d.curso)}</td><td>${escaparHTML(f.d.sector)}</td><td>${escaparHTML(f.d.email)}</td><td>${f.existente?"Actualizar":"Crear"}</td><td>${f.errores.join("; ")||"OK"}</td></tr>`).join("")||`<tr><td colspan="8">Sin datos.</td></tr>`;
+  document.getElementById("btn-importar-alumnos-confirmar").disabled=!validas;
+}
+document.getElementById("btn-importar-alumnos-confirmar").addEventListener("click",async e=>{
+  const btn=e.currentTarget;btn.disabled=true;let creados=0,actualizados=0,omitidos=0;
+  for(const f of filasImportarAlumnos){if(f.errores.length){omitidos++;continue;}const datos={legajo:String(f.d.legajo).trim(),apellido:String(f.d.apellido).trim(),nombre:String(f.d.nombre).trim()};for(const [k,v] of Object.entries({email:f.d.email,curso:f.d.curso,sector:f.d.sector})){if(String(v||"").trim())datos[k]=String(v).trim();}try{const id=f.existente?.id||idAlumnoDesdeLegajo(datos.legajo);await setDoc(doc(db,"alumnos",id),datos,{merge:true});f.existente?actualizados++:creados++;}catch(_){omitidos++;}}
+  cacheAlumnos=[];mostrarAlerta(`Alumnos creados: ${creados}. Actualizados: ${actualizados}. Omitidos: ${omitidos}.`);filasImportarAlumnos=[];renderImportarAlumnos();document.getElementById("importar-alumnos-archivo").value="";
 });
 
 // ------------------------------------------------------- FUSIONAR DUPLICADOS -
