@@ -1,45 +1,9 @@
-:root {
-  --azul: #1f4e79;
-}
-
-body {
-  background: #f4f6f8;
-}
-
-.navbar-brand {
-  font-weight: 600;
-}
-
-.vista {
-  display: none;
-}
-
-.vista.activa {
-  display: block;
-}
-
-.card-stat {
-  border: none;
-  border-radius: 10px;
-}
-
-table.table {
-  background: #fff;
-}
-
-.badge-estado-pendiente { background: #e0a800; }
-.badge-estado-entregado { background: #0d6efd; }
-.badge-estado-aprobado { background: #198754; }
-.badge-estado-rechazado { background: #dc3545; }
-
-#login-view {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.spinner-inline {
-  width: 1rem;
-  height: 1rem;
+html, body { min-height: 100%; }
+body { margin: 0; }
+.card-stat { min-height: 105px; justify-content: center; }
+.table { background: #fff; }
+.table-responsive { border-radius: .375rem; }
+@media (max-width: 991.98px) {
+  .navbar-brand { font-size: .95rem; }
+  .table { font-size: .85rem; }
 }

@@ -106,8 +106,27 @@ function diasEntreISO(fechaISO, fechaFinISO) {
 // días por semana, y se multiplica por las horas de cada día.
 // Las prácticas YA REALIZADAS no usan esta función: su total se carga a mano
 // o se importa directamente (ver determinarRealizada / import).
-function calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, diasPorSemana) {
+function fechasProgramadas(fechaISO, fechaFinISO, diasSemana = []) {
+  if (!fechaISO) return [];
+  const finISO = fechaFinISO || fechaISO;
+  const [yi, mi, di] = fechaISO.split("-").map(Number);
+  const [yf, mf, df] = finISO.split("-").map(Number);
+  const actual = new Date(yi, mi - 1, di);
+  const fin = new Date(yf, mf - 1, df);
+  const seleccionados = new Set((diasSemana || []).map(Number));
+  const resultado = [];
+  while (actual <= fin) {
+    if (!seleccionados.size || seleccionados.has(actual.getDay())) {
+      resultado.push(`${actual.getFullYear()}-${String(actual.getMonth() + 1).padStart(2, "0")}-${String(actual.getDate()).padStart(2, "0")}`);
+    }
+    actual.setDate(actual.getDate() + 1);
+  }
+  return resultado;
+}
+
+function calcularHorasTotalesAutomatico(fechaISO, fechaFinISO, horasPorDia, diasPorSemana, diasSemana = []) {
   if (!fechaISO || !horasPorDia) return 0;
+  if (diasSemana?.length) return +(fechasProgramadas(fechaISO, fechaFinISO, diasSemana).length * horasPorDia).toFixed(2);
   const dias = diasEntreISO(fechaISO, fechaFinISO);
   if (!Number.isFinite(dias) || dias < 1) return 0;
   if (dias <= 1) return +horasPorDia.toFixed(2);
@@ -129,6 +148,48 @@ function infoTipo(tipo) {
 function badgeTipo(tipo) {
   const info = infoTipo(tipo);
   return `<span class="badge ${info.clase}">${info.label}</span>`;
+}
+
+const ESTADOS_ASISTENCIA = {
+  presente: "Presente",
+  tardanza: "Tardanza",
+  ausente_justificado: "Ausente justificado",
+  ausente_injustificado: "Ausente injustificado",
+  reprogramado: "Día reprogramado",
+};
+const DIAS_SEMANA = { 0: "Dom", 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb" };
+const DASHBOARD_WIDGETS_DEFAULT = ["resumen", "horasSector", "proximas", "enCurso"];
+
+function escaparHTML(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function estadoPractica(p) {
+  if (p?.estado) return p.estado;
+  return p?.realizada === false ? "programada" : "realizada";
+}
+function practicaRealizada(p) { return estadoPractica(p) === "realizada"; }
+function diasSeleccionadosFormulario() {
+  return [...document.querySelectorAll("#practica-dias-selector input:checked")].map(x => Number(x.value)).sort((a, b) => a - b);
+}
+function marcarDiasFormulario(dias = []) {
+  const elegidos = new Set((dias || []).map(Number));
+  document.querySelectorAll("#practica-dias-selector input").forEach(x => { x.checked = elegidos.has(Number(x.value)); });
+  document.getElementById("practica-dias-semana").value = elegidos.size || 0;
+}
+
+async function obtenerConfigDashboard() {
+  try {
+    const snap = await getDoc(doc(db, "configuracion", "dashboard"));
+    return snap.exists() && Array.isArray(snap.data().widgets) ? snap.data().widgets : DASHBOARD_WIDGETS_DEFAULT;
+  } catch (_) { return DASHBOARD_WIDGETS_DEFAULT; }
+}
+async function aplicarConfigDashboard() {
+  const visibles = new Set(await obtenerConfigDashboard());
+  document.querySelectorAll("[data-dashboard-widget]").forEach(el => el.classList.toggle("oculto-config", !visibles.has(el.dataset.dashboardWidget)));
+}
+async function cargarConfiguracion() {
+  const visibles = new Set(await obtenerConfigDashboard());
+  document.querySelectorAll("#config-dashboard-widgets input").forEach(x => { x.checked = visibles.has(x.value); });
 }
 
 function abrirModal(id) {
@@ -161,6 +222,7 @@ function cargarVista(nombre) {
     drive: () => {},
     importar: () => {},
     duplicados: cargarDuplicados,
+    configuracion: cargarConfiguracion,
   };
   Promise.resolve().then(() => cargadores[nombre]?.()).catch(err => mostrarAlerta(`No se pudo cargar la vista: ${err.message || err}`, "danger"));
 }
@@ -208,6 +270,7 @@ onAuthStateChanged(auth, async (user) => {
     mostrarVista("dashboard");
     await obtenerLugares();
     poblarDatalistLugares();
+    await sincronizarAsistenciasAutomaticas();
     revisarYEnviarNotificacionesAutomaticas();
   } else {
     usuarioActual = null;
@@ -217,6 +280,13 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("app-shell").classList.add("d-none");
     document.getElementById("login-view").classList.remove("d-none");
   }
+});
+
+document.getElementById("btn-guardar-config-dashboard")?.addEventListener("click", async () => {
+  const widgets = [...document.querySelectorAll("#config-dashboard-widgets input:checked")].map(x => x.value);
+  await setDoc(doc(db, "configuracion", "dashboard"), { widgets, actualizado: new Date().toISOString() });
+  await aplicarConfigDashboard();
+  mostrarAlerta("Configuración del dashboard guardada.");
 });
 
 // -------------------------------------------------------------- LUGARES -
@@ -372,20 +442,26 @@ document.getElementById("btn-nuevo-alumno").addEventListener("click", () => {
 });
 
 async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
-  const practicas = await obtenerPracticas();
+  const [practicas, snapAsistencias] = await Promise.all([obtenerPracticas(), getDocs(collection(db, "asistencias"))]);
+  const asistencias = snapAsistencias.docs.map(d => d.data()).filter(r => r.alumnoId === alumnoId);
   const propias = practicas.filter(p => p.alumnoId === alumnoId).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const realizadas = propias.filter(practicaRealizada);
+  const horas = realizadas.reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
+  const presentes = asistencias.filter(r => ["presente", "tardanza"].includes(r.estado || (r.presente ? "presente" : "ausente_injustificado"))).length;
+  document.getElementById("alumno-seguimiento").innerHTML = `<strong>Seguimiento:</strong> ${realizadas.length} práctica(s) realizada(s), ${horas.toFixed(1)} horas contabilizadas y ${presentes}/${asistencias.length} jornadas con asistencia.`;
   document.getElementById("tabla-alumno-practicas").innerHTML = propias.map(p => `
     <tr>
       <td>${fmtRangoFechas(p)}</td><td>${p.lugar}</td>
       <td>${String(p.sector || "Sin especificar").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]))}</td>
       <td>${badgeTipo(p.tipo)}</td>
-      <td><span class="badge bg-${p.realizada !== false ? "success" : "secondary"}">${p.realizada !== false ? "Realizada" : "Pendiente"}</span></td>
+      <td><span class="badge bg-${practicaRealizada(p) ? "success" : "secondary"}">${estadoPractica(p).replace("_", " ")}</span></td>
+      <td>${asistencias.filter(r => r.practicaId === p.id && ["presente", "tardanza"].includes(r.estado || (r.presente ? "presente" : "ausente_injustificado"))).length}/${asistencias.filter(r => r.practicaId === p.id).length}</td>
       <td>${p.horasTotales}</td>
       <td>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.editarPractica('${p.id}', true)">Editar</button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.eliminarPractica('${p.id}', true)">Eliminar</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="7" class="text-muted">Este alumno todavía no tiene prácticas cargadas.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="8" class="text-muted">Este alumno todavía no tiene prácticas cargadas.</td></tr>`;
 }
 
 window.editarAlumno = async (id) => {
@@ -443,7 +519,10 @@ document.getElementById("btn-alumno-nueva-practica").addEventListener("click", a
   cerrarModal("modal-alumno");
   document.getElementById("form-practica").reset();
   document.getElementById("practica-id").value = "";
+  document.getElementById("practica-estado").value = "programada";
+  marcarDiasFormulario([1, 2, 3, 4, 5]);
   await llenarSelectAlumnos(document.getElementById("practica-alumno"), alumnoId);
+  actualizarPreviewHorasTotales();
   abrirModal("modal-practica");
 });
 
@@ -514,7 +593,7 @@ async function cargarPracticas() {
     if (!acumPorAlumno[p.alumnoId]) acumPorAlumno[p.alumnoId] = { totalHoras: 0, horasRealizadas: 0 };
     const horas = numeroHoras(p.horasTotales);
     acumPorAlumno[p.alumnoId].totalHoras += horas;
-    if (p.realizada !== false) acumPorAlumno[p.alumnoId].horasRealizadas += horas;
+    if (practicaRealizada(p)) acumPorAlumno[p.alumnoId].horasRealizadas += horas;
   });
 
   let practicas = todasLasPracticas;
@@ -548,7 +627,7 @@ async function cargarPracticas() {
 
   document.getElementById("tabla-practicas").innerHTML = practicas.map(p => {
     const acum = acumPorAlumno[p.alumnoId] || { totalHoras: 0, horasRealizadas: 0 };
-    const pendiente = p.realizada === false;
+    const pendiente = !practicaRealizada(p);
     // Compatibilidad con prácticas cargadas antes de que existiera "horasPorDia":
     // en ese esquema viejo, "horasTotales" ya representaba la carga diaria.
     const horasPorDia = p.horasPorDia ?? p.horasTotales ?? 0;
@@ -559,7 +638,7 @@ async function cargarPracticas() {
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
       <td>${p.lugar}</td>
       <td>${badgeTipo(p.tipo)}</td>
-      <td><span class="badge bg-${!pendiente ? "success" : "secondary"}">${!pendiente ? "Realizada" : "Pendiente"}</span></td>
+      <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${({programada:"Programada",en_curso:"En curso",realizada:"Realizada",cancelada:"Cancelada"})[estadoPractica(p)]}</span></td>
       <td>${p.sector || ""}</td>
       <td>${p.horaInicio || ""} - ${p.horaFin || ""}</td>
       <td>
@@ -596,8 +675,8 @@ window.actualizarHorasPorDia = async (id, valor) => {
   if (!Number.isFinite(horasPorDia) || horasPorDia < 0 || horasPorDia > 24) { mostrarAlerta("Las horas diarias deben estar entre 0 y 24.", "warning"); return; }
   const p = ultimasPracticasFiltradas.find(x => x.id === id);
   const cambios = { horasPorDia };
-  if (p && p.realizada === false) {
-    cambios.horasTotales = calcularHorasTotalesAutomatico(p.fecha, p.fechaFin, horasPorDia, p.diasPorSemana ?? 5);
+  if (p && !practicaRealizada(p)) {
+    cambios.horasTotales = calcularHorasTotalesAutomatico(p.fecha, p.fechaFin, horasPorDia, p.diasPorSemana ?? 5, p.diasSemana || []);
   }
   await updateDoc(doc(db, "practicas", id), cambios);
   mostrarAlerta("Horas x día actualizadas.");
@@ -611,8 +690,8 @@ window.actualizarDiasSemana = async (id, valor) => {
   if (!Number.isInteger(diasPorSemana) || diasPorSemana < 1 || diasPorSemana > 7) { mostrarAlerta("Ingresá entre 1 y 7 días enteros.", "warning"); return; }
   const p = ultimasPracticasFiltradas.find(x => x.id === id);
   const cambios = { diasPorSemana };
-  if (p && p.realizada === false) {
-    cambios.horasTotales = calcularHorasTotalesAutomatico(p.fecha, p.fechaFin, p.horasPorDia ?? p.horasTotales ?? 0, diasPorSemana);
+  if (p && !practicaRealizada(p)) {
+    cambios.horasTotales = calcularHorasTotalesAutomatico(p.fecha, p.fechaFin, p.horasPorDia ?? p.horasTotales ?? 0, diasPorSemana, p.diasSemana || []);
   }
   await updateDoc(doc(db, "practicas", id), cambios);
   mostrarAlerta("Días por semana actualizados.");
@@ -650,7 +729,7 @@ document.getElementById("btn-exportar-practicas")?.addEventListener("click", () 
   const filas = ultimasPracticasFiltradas.map(p => [
     fmtFecha(p.fecha), p.fechaFin ? fmtFecha(p.fechaFin) : "",
     p.alumno ? nombreCompleto(p.alumno) : "", p.alumno?.legajo || "",
-    p.lugar || "", infoTipo(p.tipo).label, p.realizada !== false ? "Realizada" : "Pendiente", p.sector || "",
+    p.lugar || "", infoTipo(p.tipo).label, estadoPractica(p), p.sector || "",
     p.horaInicio || "", p.horaFin || "", p.horasPorDia ?? p.horasTotales ?? 0, p.diasPorSemana ?? 5,
     numeroHoras(p.horasTotales),
     acumuladosPracticas[p.alumnoId]?.horasRealizadas ?? 0, acumuladosPracticas[p.alumnoId]?.totalHoras ?? 0,
@@ -671,7 +750,7 @@ document.getElementById("btn-limpiar-practicas").addEventListener("click", () =>
 // - Si ya se REALIZÓ, se habilita para que se cargue el valor real a mano
 //   (o el que trajo una importación), sin pisar lo que el usuario tipeó.
 function actualizarPreviewHorasTotales() {
-  const realizada = document.getElementById("practica-realizada").checked;
+  const realizada = document.getElementById("practica-estado").value === "realizada";
   const inputTotales = document.getElementById("practica-horas-totales");
   const ayuda = document.getElementById("practica-horas-totales-ayuda");
   if (realizada) {
@@ -683,22 +762,26 @@ function actualizarPreviewHorasTotales() {
     const fechaFin = document.getElementById("practica-fecha-fin").value;
     const horasPorDia = parseFloat(document.getElementById("practica-horas-dia").value || 0);
     const diasPorSemana = parseFloat(document.getElementById("practica-dias-semana").value || 5);
-    inputTotales.value = calcularHorasTotalesAutomatico(fecha, fechaFin, horasPorDia, diasPorSemana);
+    inputTotales.value = calcularHorasTotalesAutomatico(fecha, fechaFin, horasPorDia, diasPorSemana, diasSeleccionadosFormulario());
     inputTotales.readOnly = true;
     inputTotales.classList.add("bg-light");
     ayuda.textContent = "Calculado solo a partir de \"Horas x día\", \"Días por semana\" y el rango de fechas. Se recalcula mientras la práctica esté pendiente.";
   }
 }
-["practica-fecha", "practica-fecha-fin", "practica-horas-dia", "practica-dias-semana"].forEach(id => {
+["practica-fecha", "practica-fecha-fin", "practica-horas-dia", "practica-dias-semana", "practica-estado"].forEach(id => {
   document.getElementById(id).addEventListener("input", actualizarPreviewHorasTotales);
 });
-document.getElementById("practica-realizada").addEventListener("change", actualizarPreviewHorasTotales);
+document.querySelectorAll("#practica-dias-selector input").forEach(x => x.addEventListener("change", () => {
+  document.getElementById("practica-dias-semana").value = diasSeleccionadosFormulario().length;
+  actualizarPreviewHorasTotales();
+}));
 
 document.getElementById("btn-nueva-practica").addEventListener("click", async () => {
   practicaOrigenAlumnoId = null;
   document.getElementById("form-practica").reset();
   document.getElementById("practica-id").value = "";
-  document.getElementById("practica-dias-semana").value = 5;
+  document.getElementById("practica-estado").value = "programada";
+  marcarDiasFormulario([1, 2, 3, 4, 5]);
   await llenarSelectAlumnos(document.getElementById("practica-alumno"));
   actualizarPreviewHorasTotales();
   abrirModal("modal-practica");
@@ -724,8 +807,9 @@ window.editarPractica = async (id, desdeFicha = false) => {
   // en ese esquema viejo, "horasTotales" ya representaba la carga diaria.
   document.getElementById("practica-horas-dia").value = p.horasPorDia ?? p.horasTotales ?? 0;
   document.getElementById("practica-dias-semana").value = p.diasPorSemana ?? 5;
+  marcarDiasFormulario(p.diasSemana?.length ? p.diasSemana : [1, 2, 3, 4, 5].slice(0, p.diasPorSemana ?? 5));
   document.getElementById("practica-horas-totales").value = p.horasTotales ?? 0;
-  document.getElementById("practica-realizada").checked = p.realizada !== false;
+  document.getElementById("practica-estado").value = estadoPractica(p);
   document.getElementById("practica-tutor").value = p.tutorResponsable || "";
   document.getElementById("practica-tutor-email").value = p.tutorEmail || "";
   document.getElementById("practica-contacto").value = p.contacto || "";
@@ -743,16 +827,21 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     mostrarAlerta("La fecha de fin no puede ser anterior a la fecha de inicio.", "danger");
     return;
   }
-  const realizada = document.getElementById("practica-realizada").checked;
+  const estado = document.getElementById("practica-estado").value;
+  const realizada = estado === "realizada";
   const horasPorDia = parseFloat(document.getElementById("practica-horas-dia").value || 0);
-  const diasPorSemana = parseFloat(document.getElementById("practica-dias-semana").value || 5);
+  const diasSemana = diasSeleccionadosFormulario();
+  if (!diasSemana.length) { mostrarAlerta("Seleccioná al menos un día de asistencia.", "warning"); return; }
+  const diasPorSemana = diasSemana.length;
   // Pendiente: las horas totales se calculan solas. Realizada: se usa el
   // valor cargado a mano (o importado) en "Horas totales de esta práctica".
   const horasTotales = realizada
     ? parseFloat(document.getElementById("practica-horas-totales").value || 0)
-    : calcularHorasTotalesAutomatico(fecha, fechaFin, horasPorDia, diasPorSemana);
+    : calcularHorasTotalesAutomatico(fecha, fechaFin, horasPorDia, diasPorSemana, diasSemana);
+  const alumnosSeleccionados = [...document.getElementById("practica-alumno").selectedOptions].map(o => o.value);
+  if (!alumnosSeleccionados.length) { mostrarAlerta("Seleccioná al menos un alumno.", "warning"); return; }
   const datos = {
-    alumnoId: document.getElementById("practica-alumno").value,
+    alumnoId: alumnosSeleccionados[0],
     lugar: document.getElementById("practica-lugar").value.trim(),
     tipo: document.getElementById("practica-tipo").value,
     sector: document.getElementById("practica-sector").value.trim(),
@@ -762,8 +851,10 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     horaFin: document.getElementById("practica-fin").value,
     horasPorDia,
     diasPorSemana,
+    diasSemana,
     horasTotales,
     realizada,
+    estado,
     tutorResponsable: document.getElementById("practica-tutor").value.trim(),
     tutorEmail: document.getElementById("practica-tutor-email").value.trim(),
     contacto: document.getElementById("practica-contacto").value.trim(),
@@ -778,11 +869,13 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     }
     await updateDoc(doc(db, "practicas", id), datos);
   } else {
-    await addDoc(collection(db, "practicas"), datos);
+    const grupoId = `grupo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await Promise.all(alumnosSeleccionados.map(alumnoId => addDoc(collection(db, "practicas"), { ...datos, alumnoId, grupoId })));
   }
   await registrarLugarSiNuevo(datos.lugar);
   cerrarModal("modal-practica");
   mostrarAlerta("Fecha de práctica guardada.");
+  await sincronizarAsistenciasAutomaticas();
   // Si se editó/creó desde la ficha de un alumno, hay que refrescar esa lista
   // (y no la de "Fechas de práctica") para que el cambio se vea reflejado ahí.
   if (practicaOrigenAlumnoId) {
@@ -961,7 +1054,7 @@ async function cargarResumenPracticas() {
 
     const detalle = Object.values(porAlumno).map(entry => {
       const horasRealizadas = entry.periodos.reduce(
-        (acc, p) => acc + (p.realizada !== false ? (numeroHoras(p.horasTotales)) : 0), 0
+        (acc, p) => acc + (practicaRealizada(p) ? numeroHoras(p.horasTotales) : 0), 0
       );
       // "Asistió" = hay al menos un registro de asistencia presente para ese
       // alumno en ese lugar, dentro de alguno de sus períodos.
@@ -1346,7 +1439,39 @@ document.getElementById("form-falta").addEventListener("submit", async (e) => {
 });
 
 // ---------------------------------------------------------- ASISTENCIA --
+async function sincronizarAsistenciasAutomaticas() {
+  const [practicas, snapAsistencias] = await Promise.all([
+    obtenerPracticas(),
+    getDocs(collection(db, "asistencias")),
+  ]);
+  const existentes = new Set(snapAsistencias.docs.map(d => {
+    const r = d.data();
+    return `${r.practicaId || ""}|${r.alumnoId}|${r.fecha}`;
+  }));
+  const hoy = hoyISO();
+  const altas = [];
+  practicas.filter(p => estadoPractica(p) !== "cancelada").forEach(p => {
+    const dias = p.diasSemana?.length ? p.diasSemana : [1, 2, 3, 4, 5, 6, 0].slice(0, Math.max(1, Math.min(7, Number(p.diasPorSemana) || 5)));
+    fechasProgramadas(p.fecha, p.fechaFin, dias).filter(fecha => fecha <= hoy).forEach(fecha => {
+      const clave = `${p.id}|${p.alumnoId}|${fecha}`;
+      if (existentes.has(clave)) return;
+      existentes.add(clave);
+      altas.push(addDoc(collection(db, "asistencias"), {
+        practicaId: p.id, alumnoId: p.alumnoId, fecha,
+        lugar: p.lugar || "", tipo: p.tipo || "interna",
+        estado: "presente", presente: true,
+        horaEntrada: p.horaInicio || "", horaSalida: p.horaFin || "",
+        observaciones: "Generado automáticamente según el cronograma",
+        origen: "automatico", creado: new Date().toISOString(),
+      }));
+    });
+  });
+  if (altas.length) await Promise.all(altas);
+  return altas.length;
+}
+
 async function cargarAsistencia() {
+  await sincronizarAsistenciasAutomaticas();
   const alumnos = await obtenerAlumnos();
   const selForm = document.getElementById("asist-alumno");
   const selFiltro = document.getElementById("asist-filtro-alumno");
@@ -1359,20 +1484,33 @@ async function cargarAsistencia() {
 
   const filtroId = selFiltro.value;
   if (filtroId) registros = registros.filter(r => r.alumnoId === filtroId);
+  const filtroFecha = document.getElementById("asist-filtro-fecha").value;
+  const filtroLugar = document.getElementById("asist-filtro-lugar").value.trim().toLowerCase();
+  if (filtroFecha) registros = registros.filter(r => r.fecha === filtroFecha);
+  if (filtroLugar) registros = registros.filter(r => String(r.lugar || "").toLowerCase().includes(filtroLugar));
   registros = registros.slice(0, 100);
 
   const chkTodas = document.getElementById("chk-todas-asistencia");
   if (chkTodas) chkTodas.checked = false;
 
-  document.getElementById("tabla-asistencia").innerHTML = registros.map(r => `
+  document.getElementById("tabla-asistencia").innerHTML = registros.map(r => {
+    const estado = r.estado || (r.presente ? "presente" : "ausente_injustificado");
+    return `
     <tr>
       <td><input type="checkbox" class="chk-asistencia" value="${r.id}"></td>
       <td>${fmtFecha(r.fecha)}</td><td>${mapaAlumnos[r.alumnoId] ? nombreCompleto(mapaAlumnos[r.alumnoId]) : "-"}</td>
-      <td>${r.lugar || ""}</td><td>${r.tipo ? badgeTipo(r.tipo) : ""}</td>
-      <td>${r.presente ? "Sí" : "No"}</td><td>${r.horaEntrada || ""}</td><td>${r.horaSalida || ""}</td><td>${r.observaciones || ""}</td>
+      <td>${escaparHTML(r.lugar)}</td><td>${r.tipo ? badgeTipo(r.tipo) : ""}</td>
+      <td><select class="form-select form-select-sm estado-asistencia" onchange="window.actualizarEstadoAsistencia('${r.id}', this.value)">${Object.entries(ESTADOS_ASISTENCIA).map(([v,l]) => `<option value="${v}" ${v === estado ? "selected" : ""}>${l}</option>`).join("")}</select></td><td>${r.horaEntrada || ""}</td><td>${r.horaSalida || ""}</td><td>${escaparHTML(r.observaciones)}</td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="window.eliminarAsistencia('${r.id}')">Eliminar</button></td>
-    </tr>`).join("") || `<tr><td colspan="10" class="text-muted">No hay registros de asistencia.</td></tr>`;
+    </tr>`;
+  }).join("") || `<tr><td colspan="10" class="text-muted">No hay registros de asistencia.</td></tr>`;
 }
+
+window.actualizarEstadoAsistencia = async (id, estado) => {
+  if (!ESTADOS_ASISTENCIA[estado]) return;
+  await updateDoc(doc(db, "asistencias", id), { estado, presente: ["presente", "tardanza"].includes(estado), editado: new Date().toISOString() });
+  mostrarAlerta("Estado de asistencia actualizado.");
+};
 
 document.getElementById("chk-todas-asistencia")?.addEventListener("change", (e) => {
   document.querySelectorAll(".chk-asistencia").forEach(c => c.checked = e.target.checked);
@@ -1395,6 +1533,14 @@ document.getElementById("btn-eliminar-asistencia-masivo")?.addEventListener("cli
 });
 
 document.getElementById("asist-filtro-alumno").addEventListener("change", cargarAsistencia);
+document.getElementById("asist-filtro-fecha").addEventListener("change", cargarAsistencia);
+document.getElementById("asist-filtro-lugar").addEventListener("input", cargarAsistencia);
+document.getElementById("btn-limpiar-asistencia").addEventListener("click", () => {
+  document.getElementById("asist-filtro-alumno").value = "";
+  document.getElementById("asist-filtro-fecha").value = "";
+  document.getElementById("asist-filtro-lugar").value = "";
+  cargarAsistencia();
+});
 
 // Si para ese alumno y esa fecha ya hay una práctica cargada, se autocompletan
 // lugar y tipo (se pueden editar igual antes de guardar).
@@ -1416,19 +1562,26 @@ document.getElementById("asist-fecha").addEventListener("change", autocompletarA
 document.getElementById("form-asistencia").addEventListener("submit", async (e) => {
   e.preventDefault();
   const lugar = document.getElementById("asist-lugar").value.trim();
-  await addDoc(collection(db, "asistencias"), {
-    alumnoId: document.getElementById("asist-alumno").value,
-    fecha: document.getElementById("asist-fecha").value,
+  const alumnoId = document.getElementById("asist-alumno").value;
+  const fecha = document.getElementById("asist-fecha").value;
+  const estado = document.getElementById("asist-estado").value;
+  const datos = {
+    alumnoId, fecha,
     lugar,
     tipo: document.getElementById("asist-tipo").value,
-    presente: document.getElementById("asist-presente").checked,
+    estado,
+    presente: ["presente", "tardanza"].includes(estado),
     horaEntrada: document.getElementById("asist-entrada").value,
     horaSalida: document.getElementById("asist-salida").value,
     observaciones: document.getElementById("asist-obs").value.trim(),
-  });
+    origen: "manual",
+  };
+  const snap = await getDocs(collection(db, "asistencias"));
+  const existente = snap.docs.find(d => d.data().alumnoId === alumnoId && d.data().fecha === fecha && String(d.data().lugar || "") === lugar);
+  if (existente) await updateDoc(existente.ref, datos); else await addDoc(collection(db, "asistencias"), datos);
   await registrarLugarSiNuevo(lugar);
   document.getElementById("form-asistencia").reset();
-  document.getElementById("asist-presente").checked = true;
+  document.getElementById("asist-estado").value = "presente";
   mostrarAlerta("Asistencia registrada.");
   cargarAsistencia();
 });
@@ -1499,7 +1652,7 @@ async function renderProximasYHistorial() {
   const snap = await getDocs(collection(db, "practicas"));
   const proximas = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado)
+    .filter(p => p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   document.getElementById("tabla-notif-proximas").innerHTML = proximas.map(p => `
@@ -1557,7 +1710,7 @@ async function enviarTanda(proximas, { origen, cc = "", mensaje = "", adjunto = 
       const snap = await getDoc(doc(db, "practicas", candidata.id));
       if (!snap.exists()) { omitidos++; continue; }
       const p = { ...snap.data(), id: candidata.id };
-      if (p.realizada !== false || p.avisoAutomaticoEnviado || avisosEnviadosSesion.has(p.id)) { omitidos++; continue; }
+      if (!["programada", "en_curso"].includes(estadoPractica(p)) || p.avisoAutomaticoEnviado || avisosEnviadosSesion.has(p.id)) { omitidos++; continue; }
       const alumno = mapa[p.alumnoId];
       let estado = "error", detalle = "Alumno sin correo válido";
       const copia = cc || p.tutorEmail || "";
@@ -1609,7 +1762,7 @@ document.getElementById("btn-notif-enviar").addEventListener("click", async (e) 
     const dias = Number(document.getElementById("notif-dias").value);
     if (!Number.isInteger(dias) || dias < 0) throw new Error("Ingresá una cantidad válida de días.");
     const hoy = hoyISO(), limite = sumarDiasISO(hoy, dias);
-    const proximas = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado);
+    const proximas = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado);
     if (!proximas.length) { mostrarAlerta("No hay prácticas pendientes sin avisar en este rango.", "info"); return; }
     const config = await obtenerConfigNotificaciones();
     const archivo = document.getElementById("notif-adjunto").files[0];
@@ -1641,7 +1794,7 @@ async function revisarYEnviarNotificacionesAutomaticas() {
     const dias = Number(config.diasAviso);
     if (!Number.isInteger(dias) || dias < 0) throw new Error("Días de aviso inválidos.");
     const hoy = hoyISO(), limite = sumarDiasISO(hoy, dias);
-    const pendientes = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && p.realizada === false && !p.avisoAutomaticoEnviado);
+    const pendientes = (await obtenerPracticas()).filter(p => p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado);
     if (!pendientes.length) return;
     const r = await enviarTanda(pendientes, { origen: "automatico", cc: config.ccEmail || "" });
     mostrarAlerta(`Avisos automáticos aceptados: ${r.enviados}. Errores: ${r.errores}.`, "info");
@@ -1686,13 +1839,13 @@ async function cargarDashboard() {
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = snap.docs.map(d => d.data());
 
-  const totalHoras = practicas.reduce((acc, p) => acc + (p.realizada !== false ? (numeroHoras(p.horasTotales)) : 0), 0);
+  const totalHoras = practicas.reduce((acc, p) => acc + (practicaRealizada(p) ? numeroHoras(p.horasTotales) : 0), 0);
   document.getElementById("stat-horas").textContent = totalHoras.toFixed(1);
   document.getElementById("stat-alumnos").textContent = alumnos.length;
   document.getElementById("stat-practicas").textContent = practicas.length;
 
   const porSector = {};
-  practicas.filter(p => p.realizada !== false).forEach(p => {
+  practicas.filter(practicaRealizada).forEach(p => {
     const s = p.sector || "Sin sector";
     porSector[s] = (porSector[s] || 0) + (numeroHoras(p.horasTotales));
   });
@@ -1704,12 +1857,21 @@ async function cargarDashboard() {
   const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
   const proximas = practicas
     .map((p, idx) => ({ ...p, id: snap.docs[idx].id }))
-    .filter(p => (p.fechaFin || p.fecha) >= hoy)
+    .filter(p => p.fecha > hoy && estadoPractica(p) !== "cancelada")
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
     .slice(0, 5);
   document.getElementById("tabla-proximas").innerHTML = proximas.map(p => `
     <tr><td>${fmtRangoFechas(p)}</td><td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td><td>${p.lugar}</td></tr>
   `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas próximas.</td></tr>`;
+
+  const enCurso = practicas
+    .map((p, idx) => ({ ...p, id: snap.docs[idx].id }))
+    .filter(p => p.fecha <= hoy && (p.fechaFin || p.fecha) >= hoy && estadoPractica(p) !== "cancelada")
+    .sort((a, b) => String(a.lugar || "").localeCompare(String(b.lugar || "")));
+  document.getElementById("tabla-en-curso").innerHTML = enCurso.map(p => `
+    <tr><td>${fmtRangoFechas(p)}</td><td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td><td>${escaparHTML(p.lugar)}</td></tr>
+  `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas en curso hoy.</td></tr>`;
+  await aplicarConfigDashboard();
 }
 
 // --------------------------------------------------------- ESTADISTICAS -
@@ -1773,7 +1935,7 @@ async function cargarEstadisticas() {
 
   practicas.forEach(p => {
     const horas = numeroHoras(p.horasTotales);
-    const esRealizada = p.realizada !== false; // sin dato = compatibilidad con carga manual previa
+    const esRealizada = practicaRealizada(p);
     const registro = porAlumno[p.alumnoId];
     if (!registro) return;
     registro.cantidad += 1;
@@ -2375,8 +2537,8 @@ async function cargarDuplicados() {
   document.getElementById("duplicados-lista").innerHTML = grupos.map((g, gi) => {
     const filas = g.map(a => {
       const propias = practicas.filter(p => p.alumnoId === a.id);
-      const horasRealizadas = propias.filter(p => p.realizada !== false).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
-      const horasPendientes = propias.filter(p => p.realizada === false).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
+      const horasRealizadas = propias.filter(practicaRealizada).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
+      const horasPendientes = propias.filter(p => !practicaRealizada(p)).reduce((s, p) => s + (parseFloat(p.horasTotales) || 0), 0);
       const nAsist = asistencias.filter(x => x.alumnoId === a.id).length;
       const nFaltas = faltas.filter(x => x.alumnoId === a.id).length;
       return { a, propias, horasRealizadas, horasPendientes, nAsist, nFaltas };
@@ -2495,7 +2657,7 @@ function exportarLibro(nombreArchivo, hojas) {
 }
 function filaPractica(p) {
   return [p.id, fmtFecha(p.fecha), fmtFecha(p.fechaFin || p.fecha), p.lugar || "", p.sector || "", infoTipo(p.tipo).label,
-    p.realizada !== false ? "Realizada" : "Pendiente (estimada)", numeroHoras(p.horasTotales),
+    estadoPractica(p), numeroHoras(p.horasTotales),
     p.horaInicio || "", p.horaFin || "", p.tutorResponsable || "", p.contacto || ""];
 }
 const columnasPractica = ["ID práctica", "Inicio", "Fin", "Lugar", "Sector / carrera", "Tipo de práctica", "Estado", "Horas", "Entrada", "Salida", "Tutor", "Contacto"];
@@ -2541,14 +2703,14 @@ document.getElementById("btn-exportar-ficha").addEventListener("click", e => acc
   const a = alumnos.find(a => a.id === id);
   if (!a) throw new Error("El alumno ya no existe.");
   const propias = practicas.filter(p => p.alumnoId === id);
-  const realizadas = propias.filter(p => p.realizada !== false).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
-  const pendientes = propias.filter(p => p.realizada === false).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
+  const realizadas = propias.filter(practicaRealizada).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
+  const pendientes = propias.filter(p => !practicaRealizada(p)).reduce((t, p) => t + numeroHoras(p.horasTotales), 0);
   const registros = snap => snap.docs.map(d => d.data()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
   const nombre = String(a.legajo || a.id).replace(/[^\p{L}\p{N}_-]/gu, "_");
   exportarLibro(`ficha_${nombre}_${hoyISO()}.xlsx`, [
     { nombre: "Ficha", encabezados: ["Dato", "Valor"], filas: [["Alumno", nombreCompleto(a)], ["Legajo", a.legajo || ""], ["Curso", a.curso || ""], ["Sector", a.sector || ""], ["Email", a.email || ""], ["Horas realizadas", realizadas], ["Horas pendientes estimadas", pendientes], ["Cantidad de prácticas", propias.length], ["Generado", new Date().toLocaleString("es-AR")], ["Criterio", "Horas tomadas de prácticas; asistencias y faltas no se suman ni descuentan automáticamente."]] },
     { nombre: "Prácticas", encabezados: columnasPractica, filas: propias.map(filaPractica) },
-    { nombre: "Asistencias", encabezados: ["Fecha", "Lugar", "Tipo", "Presente", "Entrada", "Salida", "Observaciones"], filas: registros(asistencias).map(r => [fmtFecha(r.fecha), r.lugar || "", infoTipo(r.tipo).label, r.presente ? "Sí" : "No", r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""]) },
+    { nombre: "Asistencias", encabezados: ["Fecha", "Lugar", "Tipo", "Estado", "Entrada", "Salida", "Observaciones"], filas: registros(asistencias).map(r => [fmtFecha(r.fecha), r.lugar || "", infoTipo(r.tipo).label, ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"), r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""]) },
     { nombre: "Faltas", encabezados: ["Fecha", "Justificada", "Motivo"], filas: registros(faltas).map(r => [fmtFecha(r.fecha), r.justificada ? "Sí" : "No", r.motivo || ""]) },
     { nombre: "Informes", encabezados: ["Fecha", "Título", "Práctica vinculada", "Enlace"], filas: registros(informes).map(r => [fmtFecha(r.fecha), r.titulo || "", r.practicaId || "", r.enlaceDrive || ""]) },
   ]);
@@ -2562,7 +2724,7 @@ for (const [boton, coleccion, filtro] of [["btn-exportar-asistencias", "asistenc
     const filas = snap.docs.map(d => d.data()).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
     const asistencia = coleccion === "asistencias";
     exportarXLSX(`${coleccion}_${hoyISO()}.xlsx`, asistencia ? "Asistencias" : "Faltas",
-      ["Fecha", "Alumno", "Legajo", ...(asistencia ? ["Lugar", "Presente", "Entrada", "Salida", "Observaciones"] : ["Justificada", "Motivo"])],
-      filas.map(r => [fmtFecha(r.fecha), mapa[r.alumnoId] ? nombreCompleto(mapa[r.alumnoId]) : r.alumnoId, mapa[r.alumnoId]?.legajo || "", ...(asistencia ? [r.lugar || "", r.presente ? "Sí" : "No", r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""] : [r.justificada ? "Sí" : "No", r.motivo || ""])]));
+      ["Fecha", "Alumno", "Legajo", ...(asistencia ? ["Lugar", "Estado", "Entrada", "Salida", "Observaciones"] : ["Justificada", "Motivo"])],
+      filas.map(r => [fmtFecha(r.fecha), mapa[r.alumnoId] ? nombreCompleto(mapa[r.alumnoId]) : r.alumnoId, mapa[r.alumnoId]?.legajo || "", ...(asistencia ? [r.lugar || "", ESTADOS_ASISTENCIA[r.estado] || (r.presente ? "Presente" : "Ausente injustificado"), r.horaEntrada || "", r.horaSalida || "", r.observaciones || ""] : [r.justificada ? "Sí" : "No", r.motivo || ""])]));
   }));
 }

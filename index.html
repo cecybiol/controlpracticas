@@ -8,6 +8,17 @@
 <link href="css/style.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
+  :root { --pp-azul: #0879bd; --pp-azul-oscuro: #07547f; --pp-rojo: #9f2c25; }
+  body { background: #f5f7fa; }
+  #login-view { min-height: 100vh; display: grid; place-items: center; padding: 1rem; background: linear-gradient(135deg, #eef7fc, #fff); }
+  #login-view.d-none { display: none !important; }
+  .logo-login { width: 132px; height: 132px; object-fit: contain; display: block; margin: 0 auto 1rem; }
+  .logo-nav { width: 44px; height: 44px; object-fit: contain; margin-right: .65rem; background: #fff; border-radius: 50%; padding: 2px; }
+  .navbar.bg-dark { background: var(--pp-azul-oscuro) !important; }
+  .btn-primary { background-color: var(--pp-azul); border-color: var(--pp-azul); }
+  .dashboard-widget.oculto-config { display: none !important; }
+  .dias-semana-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; }
+  .estado-asistencia { min-width: 185px; }
   .vista { display: none; }
   .vista.activa { display: block; }
   /* Color de referencia por tipo de práctica, para distinguirlas de un
@@ -34,6 +45,7 @@
 <!-- ===================== LOGIN ===================== -->
 <div id="login-view">
   <div class="card p-4 shadow-sm" style="width: 340px;">
+    <img src="img/guemes.png" alt="Logo Escuela Técnica N.° 10" class="logo-login">
     <h4 class="text-center mb-3">Prácticas Profesionalizantes</h4>
     <div id="login-error" class="alert alert-danger d-none"></div>
     <form id="form-login">
@@ -55,7 +67,7 @@
 <div id="app-shell" class="d-none">
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-      <span class="navbar-brand">PP</span>
+      <span class="navbar-brand d-flex align-items-center"><img src="img/guemes.png" alt="Logo Escuela Técnica N.° 10" class="logo-nav">Prácticas Profesionalizantes</span>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -63,17 +75,17 @@
         <ul class="navbar-nav me-auto">
           <li class="nav-item"><a class="nav-link" href="#" data-view="dashboard">Horas / Dashboard</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="estadisticas">Estadísticas</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Fechas de práctica</a></li>
+          <li class="nav-item"><a class="nav-link" href="#" data-view="practicas">Carga de prácticas</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="informes">Informes PP</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="resumen">Resumen por práctica</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="drive">Buscar en Drive</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-view="faltas">Faltas</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="asistencia">Asistencia</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="notificaciones">Notificaciones</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="alumnos">Alumnos</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-view="importar">Importar planilla</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="duplicados">Fusionar duplicados</a></li>
           <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="usuarios">Usuarios</a></li>
+          <li class="nav-item admin-only d-none"><a class="nav-link" href="#" data-view="configuracion">Configuración</a></li>
         </ul>
         <span class="navbar-text text-light me-3" id="usuario-actual"></span>
         <button class="btn btn-outline-light btn-sm" id="btn-logout">Salir</button>
@@ -87,7 +99,7 @@
     <!-- ---------- DASHBOARD ---------- -->
     <section class="vista" id="vista-dashboard">
       <h3>Panel general</h3>
-      <div class="row mb-4">
+      <div class="row mb-4 dashboard-widget" data-dashboard-widget="resumen">
         <div class="col-md-3">
           <div class="card card-stat text-center p-3 shadow-sm">
             <div class="fs-4 fw-bold" id="stat-horas">0</div>
@@ -108,18 +120,25 @@
         </div>
       </div>
       <div class="row">
-        <div class="col-md-6">
+        <div class="col-md-6 dashboard-widget" data-dashboard-widget="horasSector">
           <h5>Horas por sector</h5>
           <table class="table table-sm table-bordered">
             <thead><tr><th>Sector</th><th>Horas</th></tr></thead>
             <tbody id="tabla-horas-sector"></tbody>
           </table>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-6 dashboard-widget" data-dashboard-widget="proximas">
           <h5>Próximas prácticas</h5>
           <table class="table table-sm table-bordered">
             <thead><tr><th>Fecha</th><th>Alumno</th><th>Lugar</th></tr></thead>
             <tbody id="tabla-proximas"></tbody>
+          </table>
+        </div>
+        <div class="col-md-6 dashboard-widget" data-dashboard-widget="enCurso">
+          <h5>Prácticas en curso</h5>
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Período</th><th>Alumno</th><th>Lugar</th></tr></thead>
+            <tbody id="tabla-en-curso"></tbody>
           </table>
         </div>
       </div>
@@ -313,9 +332,10 @@
                 <button type="button" class="btn btn-sm btn-outline-primary" id="btn-alumno-nueva-practica">+ Agregar práctica</button>
 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-ficha">Exportar ficha a Excel</button>
               </div>
+              <div id="alumno-seguimiento" class="alert alert-light border py-2 mb-2"></div>
               <div class="table-responsive" style="max-height:260px; overflow-y:auto;">
                 <table class="table table-sm table-bordered mb-0">
-                  <thead><tr><th>Fecha</th><th>Lugar</th><th>Sector / carrera</th><th>Tipo de práctica</th><th>Estado</th><th>Horas</th><th></th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Lugar</th><th>Sector / carrera</th><th>Tipo</th><th>Estado</th><th>Asistencia</th><th>Horas</th><th></th></tr></thead>
                   <tbody id="tabla-alumno-practicas"></tbody>
                 </table>
               </div>
@@ -332,8 +352,8 @@
     <!-- ---------- PRACTICAS (fechas) ---------- -->
     <section class="vista" id="vista-practicas">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3>Fechas de práctica</h3>
-        <button class="btn btn-primary btn-sm" id="btn-nueva-practica">+ Nueva fecha</button>
+        <h3>Carga y gestión de prácticas</h3>
+        <button class="btn btn-primary btn-sm" id="btn-nueva-practica">+ Nueva práctica</button>
       </div>
 
       <div class="row g-2 mb-3 card p-3 shadow-sm">
@@ -381,10 +401,10 @@
     <div class="modal fade" id="modal-practica" tabindex="-1">
       <div class="modal-dialog"><div class="modal-content">
         <form id="form-practica">
-          <div class="modal-header"><h5 class="modal-title">Fecha de práctica</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-header"><h5 class="modal-title">Cargar práctica</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <input type="hidden" id="practica-id">
-            <div class="mb-2"><label class="form-label">Alumno</label><select class="form-select" id="practica-alumno" required></select></div>
+            <div class="mb-2"><label class="form-label">Alumnos asignados</label><select class="form-select" id="practica-alumno" multiple size="6" required></select><div class="form-text">Podés seleccionar varios con Ctrl/Cmd + clic. Al editar una asignación existente se modifica ese alumno.</div></div>
             <div class="mb-2"><label class="form-label">Lugar</label><input class="form-control" id="practica-lugar" list="lugares-list" autocomplete="off" placeholder="Elegí uno existente o escribí uno nuevo" required></div>
             <div class="mb-2"><label class="form-label">Tipo de práctica</label>
               <select class="form-select" id="practica-tipo">
@@ -413,16 +433,15 @@
                 <input type="number" step="0.5" min="0" class="form-control" id="practica-horas-dia" value="0">
                 <div class="form-text">Cuántas horas debe cumplir el alumno cada día de práctica.</div>
               </div>
-              <div class="col-6">
-                <label class="form-label">Días por semana</label>
-                <input type="number" step="1" min="1" max="7" class="form-control" id="practica-dias-semana" value="5">
-                <div class="form-text">Cantidad de días semanales que concurre.</div>
-              </div>
+              <div class="col-6"><label class="form-label">Días de asistencia</label><div class="dias-semana-grid" id="practica-dias-selector">
+                <label><input type="checkbox" value="1"> Lun</label><label><input type="checkbox" value="2"> Mar</label>
+                <label><input type="checkbox" value="3"> Mié</label><label><input type="checkbox" value="4"> Jue</label>
+                <label><input type="checkbox" value="5"> Vie</label><label><input type="checkbox" value="6"> Sáb</label>
+                <label><input type="checkbox" value="0"> Dom</label>
+              </div><input type="hidden" id="practica-dias-semana" value="5"><div class="form-text">Marcá los días exactos en que concurren.</div></div>
             </div>
-            <div class="form-check mb-2">
-              <input type="checkbox" class="form-check-input" id="practica-realizada" checked>
-              <label class="form-check-label">Ya se realizó (suma a las horas cumplidas en Estadísticas)</label>
-            </div>
+            <div class="mb-2"><label class="form-label">Estado de la práctica</label><select class="form-select" id="practica-estado"><option value="programada">Programada</option><option value="en_curso">En curso</option><option value="realizada">Realizada</option><option value="cancelada">Cancelada</option></select><div class="form-text">Sólo el estado “Realizada” suma horas cumplidas.</div></div>
+            <input type="checkbox" class="d-none" id="practica-realizada">
             <div class="mb-2">
               <label class="form-label">Horas totales de esta práctica</label>
               <input type="number" step="0.5" min="0" class="form-control" id="practica-horas-totales" value="0">
@@ -632,6 +651,7 @@
     <!-- ---------- ASISTENCIA ---------- -->
     <section class="vista" id="vista-asistencia">
       <h3>Registro de asistencia</h3>
+      <p class="text-muted">El sistema crea automáticamente un registro “Presente” al cumplirse cada día programado. Podés corregir el estado desde la tabla.</p>
       <form id="form-asistencia" class="row g-2 card p-3 shadow-sm mb-4">
         <div class="col-md-3"><select class="form-select" id="asist-alumno" required></select></div>
         <div class="col-md-2"><input type="date" class="form-control" id="asist-fecha" required></div>
@@ -645,25 +665,42 @@
         </div>
         <div class="col-md-1"><input type="time" class="form-control" id="asist-entrada" placeholder="Entrada"></div>
         <div class="col-md-1"><input type="time" class="form-control" id="asist-salida" placeholder="Salida"></div>
-        <div class="col-md-1 form-check d-flex align-items-center">
-          <input type="checkbox" class="form-check-input me-2" id="asist-presente" checked>
-          <label class="form-check-label">Presente</label>
-        </div>
+        <div class="col-md-2"><select class="form-select" id="asist-estado"><option value="presente">Presente</option><option value="tardanza">Tardanza</option><option value="ausente_justificado">Ausente justificado</option><option value="ausente_injustificado">Ausente injustificado</option><option value="reprogramado">Día reprogramado</option></select></div>
+        <input type="checkbox" class="d-none" id="asist-presente" checked>
         <div class="form-text">Si el alumno ya tiene una práctica cargada para esa fecha, el lugar y el tipo se completan solos.</div>
         <div class="col-12"><input class="form-control" id="asist-obs" placeholder="Observaciones (opcional)"></div>
         <div class="col-12"><button class="btn btn-primary" type="submit">Guardar</button></div>
       </form>
-      <select class="form-select mb-3" style="max-width:300px" id="asist-filtro-alumno">
-        <option value="">Todos los alumnos</option>
-      </select>
+      <div class="row g-2 mb-3">
+        <div class="col-md-4"><select class="form-select" id="asist-filtro-alumno"><option value="">Todos los alumnos</option></select></div>
+        <div class="col-md-3"><input type="date" class="form-control" id="asist-filtro-fecha" title="Filtrar por fecha"></div>
+        <div class="col-md-3"><input class="form-control" id="asist-filtro-lugar" list="lugares-list" placeholder="Filtrar por lugar"></div>
+        <div class="col-md-2"><button class="btn btn-outline-secondary w-100" type="button" id="btn-limpiar-asistencia">Limpiar</button></div>
+      </div>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-asistencia-masivo">Eliminar seleccionadas</button>
 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-asistencias">Exportar asistencias a Excel</button>
       </div>
       <table class="table table-bordered">
-        <thead><tr><th><input type="checkbox" id="chk-todas-asistencia"></th><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Presente</th><th>Entrada</th><th>Salida</th><th>Obs.</th><th></th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="chk-todas-asistencia"></th><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Entrada</th><th>Salida</th><th>Obs.</th><th></th></tr></thead>
         <tbody id="tabla-asistencia"></tbody>
       </table>
+    </section>
+
+    <!-- ---------- CONFIGURACIÓN ---------- -->
+    <section class="vista" id="vista-configuracion">
+      <h3>Configuración</h3>
+      <div class="card p-4 shadow-sm" style="max-width:680px">
+        <h5>Contenido visible en el dashboard</h5>
+        <p class="text-muted">Elegí qué bloques se muestran en el panel general para todos los usuarios.</p>
+        <div class="row g-2" id="config-dashboard-widgets">
+          <label class="col-md-6"><input type="checkbox" value="resumen"> Indicadores generales</label>
+          <label class="col-md-6"><input type="checkbox" value="horasSector"> Horas por sector</label>
+          <label class="col-md-6"><input type="checkbox" value="proximas"> Próximas prácticas</label>
+          <label class="col-md-6"><input type="checkbox" value="enCurso"> Prácticas en curso</label>
+        </div>
+        <button class="btn btn-primary mt-3" id="btn-guardar-config-dashboard" type="button" style="width:fit-content">Guardar configuración</button>
+      </div>
     </section>
 
     <!-- ---------- NOTIFICACIONES ---------- -->
