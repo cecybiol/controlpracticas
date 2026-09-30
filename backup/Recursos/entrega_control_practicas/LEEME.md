@@ -1,5 +1,3 @@
-> Documento histórico. Para la configuración vigente y gratuita utilizar [CONFIGURACION_GRATUITA.md](CONFIGURACION_GRATUITA.md). Las instrucciones antiguas de EmailJS ya no se aplican.
-
 # Control de Prácticas Profesionalizantes
 
 ## Reemplazo
