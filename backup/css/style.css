@@ -1,9 +1,0 @@
-html, body { min-height: 100%; }
-body { margin: 0; }
-.card-stat { min-height: 105px; justify-content: center; }
-.table { background: #fff; }
-.table-responsive { border-radius: .375rem; }
-@media (max-width: 991.98px) {
-  .navbar-brand { font-size: .95rem; }
-  .table { font-size: .85rem; }
-}
