@@ -164,11 +164,16 @@ function procesarControlPracticas(){
  try{
   const config=CPconfig((fs.get('configuracion/notificaciones')||{data:{}}).data);
   const requests=fs.list('notificaciones_solicitudes',['estado','EQUAL','pendiente'],CP_SETTINGS.maxRequests);
-  const practices=fs.list('practicas').map(r=>Object.assign({id:r.id},r.data));
-  status.asistencia=CPsync(fs,practices,now,budget);
+  const prepared=(fs.get('configuracion/lecturas')||{data:{}}).data.practicasPreparadas===true;
+  const since=PropertiesService.getScriptProperties().getProperty('CP_ULTIMA_FECHA_ASISTENCIA')||CPDomain.addDays(now.date,-1);
+  const syncRows=fs.list('practicas',prepared?[['fechaFin','GREATER_THAN_OR_EQUAL',since],['fecha','LESS_THAN_OR_EQUAL',now.date]]:null);
+  const syncPractices=syncRows.map(r=>Object.assign({id:r.id},r.data));
+  status.asistencia=CPsync(fs,syncPractices,now,budget);
   const automatic=config.automatico&&now.time>=config.horaEnvio;
+  const requiresPractices=automatic||requests.some(r=>r.data.accion!=='particular');
+  const practices=prepared?(requiresPractices?fs.list('practicas',[['fecha','GREATER_THAN_OR_EQUAL',now.date],['fecha','LESS_THAN_OR_EQUAL',CPDomain.addDays(now.date,config.diasAviso)]]).map(r=>Object.assign({id:r.id},r.data)):[]):syncPractices;
   if(requests.length||automatic){
-   const students=fs.list('alumnos').map(r=>Object.assign({id:r.id},r.data));
+   const ids={};practices.forEach(p=>{if(p.alumnoId)ids[p.alumnoId]=true;});const students=Object.keys(ids).map(id=>fs.get('alumnos/'+id)).filter(Boolean).map(r=>Object.assign({id:r.id},r.data));
    let files=[];if(automatic||requests.some(r=>r.data.accion!=='particular')){try{files=CPfiles(config.acuerdosFolderId);}catch(err){files.error=err.message;}}
    for(const request of requests){if(Date.now()-budget.start>CP_SETTINGS.maxMillis)break;CPrequest(fs,request,practices,students,config,now,files,budget);}
    if(automatic&&Date.now()-budget.start<=CP_SETTINGS.maxMillis)status=Object.assign(status,CPbatch(fs,practices,students,config,now,files,null,false,budget,'programado'));

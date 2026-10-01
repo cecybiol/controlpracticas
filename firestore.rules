@@ -21,6 +21,7 @@ service cloud.firestore {
    allow create: if teacher() && id == 'notificaciones' && request.resource.data.keys().hasOnly(['diasAviso','ccEmail','automatico','horaEnvio','acuerdosFolderId','adjuntosConfigurados']);
    allow update: if teacher() && id == 'notificaciones' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['diasAviso','ccEmail','automatico','horaEnvio','acuerdosFolderId','adjuntosConfigurados']);
    allow write: if admin() && id == 'dashboard';
+   allow create,update: if admin() && id == 'lecturas' && request.resource.data.keys().hasOnly(['alumnosPreparadas','practicasPreparadas','informesPreparadas','usuariosPreparadas','asistenciasPreparadas','actualizado']);
   }
   match /notificaciones_log/{id} {
    allow read: if teacher();

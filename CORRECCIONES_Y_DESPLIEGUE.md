@@ -40,3 +40,7 @@ Los intentos inciertos bloquean reenvíos; revisar la cuenta remitente antes de 
 No se enviaron correos reales ni se instaló el disparador en la cuenta del docente. La versión gratuita se prepara en una rama de GitHub para revisión. La página pública y la cuenta Google requieren la instalación indicada en la guía; no se afirma un despliegue en producción.
 
 El paquete incluye los archivos actualizados, guía de instalación y parche completo respecto del código original auditado.
+
+## Actualización del 30/09/2026: consultas eficientes
+
+La versión actual añade páginas de 20, filtros en servidor, preparación del historial e índices. La instalación y la auditoría de consumo están en GUIA_CONSULTAS_EFICIENTES.md. La verificación actual suma 118 pruebas, incluyendo interfaz y emulador.

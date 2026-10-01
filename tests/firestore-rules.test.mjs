@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
 import {initializeTestEnvironment,assertSucceeds,assertFails} from '@firebase/rules-unit-testing';
-import {doc,setDoc,getDoc,collection,getDocs,query,where} from 'firebase/firestore';
+import {doc,setDoc,getDoc,collection,getDocs,query,where,orderBy,limit,startAfter} from 'firebase/firestore';
 const env=await initializeTestEnvironment({projectId:'demo-controlpracticas',firestore:{rules:fs.readFileSync('firestore.rules','utf8')}});
 await env.withSecurityRulesDisabled(async ctx=>{const db=ctx.firestore();await Promise.all([setDoc(doc(db,'usuarios','admin'),{rol:'admin'}),setDoc(doc(db,'usuarios','tutor'),{rol:'tutor'}),setDoc(doc(db,'usuarios','alumno'),{rol:'alumno',alumnoId:'a'}),setDoc(doc(db,'alumnos','a'),{nombre:'Ana'}),setDoc(doc(db,'alumnos','b'),{nombre:'Otro'}),setDoc(doc(db,'practicas','p'),{alumnoId:'a'}),setDoc(doc(db,'practicas','q'),{alumnoId:'b'})]);});
 const student=env.authenticatedContext('alumno').firestore(),teacher=env.authenticatedContext('tutor').firestore(),admin=env.authenticatedContext('admin').firestore(),anon=env.unauthenticatedContext().firestore();
@@ -17,4 +17,11 @@ test('Alumno no solicita correos',async()=>assertFails(setDoc(doc(student,'notif
 test('Tutor solicita comprobación y envío con su UID',async()=>{await assertSucceeds(setDoc(doc(teacher,'notificaciones_solicitudes','t'),{accion:'comprobar',solicitanteUid:'tutor',estado:'pendiente',creado:'2026-09-29'}));await assertSucceeds(setDoc(doc(teacher,'notificaciones_solicitudes','envio'),{accion:'enviar',solicitanteUid:'tutor',estado:'pendiente',creado:'2026-09-29',practicaIds:['p']}));});
 test('No se puede falsificar solicitante ni resultado',async()=>{await assertFails(setDoc(doc(teacher,'notificaciones_solicitudes','falso'),{accion:'comprobar',solicitanteUid:'admin',estado:'pendiente',creado:'2026-09-29'}));await assertFails(setDoc(doc(teacher,'notificaciones_solicitudes','resultado'),{accion:'comprobar',solicitanteUid:'tutor',estado:'completado',creado:'2026-09-29'}));await assertFails(setDoc(doc(teacher,'notificaciones_solicitudes','t'),{estado:'completado'},{merge:true}));});
 test('Solicitud de envío no admite selección vacía ni más de cien prácticas',async()=>{await assertFails(setDoc(doc(teacher,'notificaciones_solicitudes','vacia'),{accion:'enviar',solicitanteUid:'tutor',estado:'pendiente',creado:'2026-09-29',practicaIds:[]}));await assertFails(setDoc(doc(teacher,'notificaciones_solicitudes','muchas'),{accion:'enviar',solicitanteUid:'tutor',estado:'pendiente',creado:'2026-09-29',practicaIds:Array(101).fill('p')}));});
+test('Sólo admin marca búsqueda preparada y no permite claves ajenas',async()=>{await assertSucceeds(setDoc(doc(admin,'configuracion','lecturas'),{practicasPreparadas:true,actualizado:'2026-09-30'}));await assertFails(setDoc(doc(teacher,'configuracion','lecturas'),{practicasPreparadas:true}));await assertFails(setDoc(doc(admin,'configuracion','lecturas'),{rol:'admin'}));});
+test('Firestore real pagina 20 registros con fechas iguales sin saltos ni duplicados',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{const db=ctx.firestore();await Promise.all(Array.from({length:53},(_,n)=>setDoc(doc(db,'asistencias','pagina_'+String(n).padStart(3,'0')),{alumnoId:'prueba_pagina',fecha:'2026-09-30',lugar:'ULP'})));});
+ const base=[where('alumnoId','==','prueba_pagina'),orderBy('fecha','desc')],seen=[];let cursor;
+ for(const expected of [20,20,13]){const snap=await assertSucceeds(getDocs(query(collection(teacher,'asistencias'),...base,...(cursor?[startAfter(cursor)]:[]),limit(20))));assert.equal(snap.docs.length,expected);seen.push(...snap.docs.map(d=>d.id));cursor=snap.docs.at(-1);}
+ assert.equal(new Set(seen).size,53);
+});
 test.after(async()=>env.cleanup());

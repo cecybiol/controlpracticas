@@ -3,7 +3,7 @@
     "firebase": "^12.17.1"
   },
   "scripts": {
-    "test": "node tests/domain.test.mjs && node tests/apps-script.test.mjs && node --experimental-vm-modules tests/ui.test.mjs",
+    "test": "node tests/domain.test.mjs && node tests/firestore-access.test.mjs && node tests/record-pages.test.mjs && node tests/apps-script.test.mjs && node --experimental-vm-modules tests/ui.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-controlpracticas \"node tests/firestore-rules.test.mjs && node tests/apps-script-rest.test.mjs\"",
     "prepare:apps-script": "node scripts/prepare-apps-script.mjs"
   },

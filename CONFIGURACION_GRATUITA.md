@@ -123,3 +123,7 @@ Una solicitud `procesando` que nunca terminó también requiere revisión manual
 - https://developers.google.com/identity/protocols/oauth2
 - https://firebase.google.com/docs/firestore/use-rest-api
 - https://firebase.google.com/docs/firestore/quotas
+
+## Actualización de páginas y filtros (30/09/2026)
+
+Antes de usar las búsquedas y filtros combinados, seguir GUIA_CONSULTAS_EFICIENTES.md: desplegar índices, publicar todos los módulos y preparar el historial en Configuración, en tandas de 20. También actualizar Code.gs y Firestore.gs para habilitar la reducción de lecturas horarias. Los servicios continúan gratuitos; no activar Blaze.

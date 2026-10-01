@@ -164,7 +164,7 @@
     <div id="alertas"></div>
 
     <!-- ---------- DASHBOARD ---------- -->
-    <section class="vista" id="vista-dashboard">
+    <section class="vista" id="vista-dashboard"><button id="btn-calcular-dashboard" class="btn btn-outline-secondary btn-sm mb-3" type="button">Calcular indicadores del historial completo</button><p class="small text-muted">Vista rápida: hasta 5 próximas prácticas y 20 en curso. Los indicadores completos se consultan con el botón.</p>
       <h3>Panel general</h3>
       <div class="row mb-4 dashboard-widget" data-dashboard-widget="resumen">
         <div class="col-md-3">
@@ -212,13 +212,13 @@
     </section>
 
     <!-- ---------- ESTADISTICAS ---------- -->
-    <section class="vista" id="vista-estadisticas">
+    <section class="vista" id="vista-estadisticas"><p class="alert alert-info">Elegí los filtros y pulsá Actualizar para calcular estadísticas. Esta consulta utiliza el historial completo.</p>
       <h3>Estadísticas de cumplimiento</h3>
       <p class="text-muted">Porcentaje de práctica realizada por alumno, calculado sobre el total de horas que ya tiene cargadas ese alumno en sus propias prácticas (realizadas + pendientes), y desglose por prácticas internas / externas / interescolares.</p>
 
       <div class="row g-2 align-items-end mb-3">
         <div class="col-auto">
-          <button class="btn btn-outline-secondary" id="btn-estad-actualizar">Actualizar</button>
+          <button class="btn btn-outline-secondary" id="btn-estad-actualizar">Calcular / Actualizar</button>
         </div>
       </div>
 
@@ -256,7 +256,7 @@
       <div class="row mb-2">
         <div class="col-md-3">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-total-alumnos">0</div>
+            <div class="fs-4 fw-bold" id="estad-total-alumnos">—</div>
             <div class="text-muted">Alumnos</div>
           </div>
         </div>
@@ -268,13 +268,13 @@
         </div>
         <div class="col-md-3">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-horas-realizadas">0</div>
+            <div class="fs-4 fw-bold" id="estad-horas-realizadas">—</div>
             <div class="text-muted">Horas realizadas (total)</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold" id="estad-horas-pendientes">0</div>
+            <div class="fs-4 fw-bold" id="estad-horas-pendientes">—</div>
             <div class="text-muted">Horas pendientes (programadas)</div>
           </div>
         </div>
@@ -282,19 +282,19 @@
       <div class="row mb-4">
         <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold"><span id="estad-horas-internas">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-interna-total">0</span> hs</span></div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-internas">—</span><span class="fs-6 text-muted"> / <span id="estad-obj-interna-total">—</span> hs</span></div>
             <div class="text-muted"><span class="badge badge-tipo-interna">Interna</span> realizadas / a cumplir</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold"><span id="estad-horas-externas">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-externa-total">0</span> hs</span></div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-externas">—</span><span class="fs-6 text-muted"> / <span id="estad-obj-externa-total">—</span> hs</span></div>
             <div class="text-muted"><span class="badge badge-tipo-externa">Externa</span> realizadas / a cumplir</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="card card-stat text-center p-3 shadow-sm">
-            <div class="fs-4 fw-bold"><span id="estad-horas-interescolar">0</span><span class="fs-6 text-muted"> / <span id="estad-obj-interescolar-total">0</span> hs</span></div>
+            <div class="fs-4 fw-bold"><span id="estad-horas-interescolar">—</span><span class="fs-6 text-muted"> / <span id="estad-obj-interescolar-total">—</span> hs</span></div>
             <div class="text-muted"><span class="badge badge-tipo-interescolar">Interescolar</span> realizadas / a cumplir</div>
           </div>
         </div>
@@ -368,17 +368,17 @@
         <button class="btn btn-primary btn-sm" id="btn-nuevo-alumno">+ Nuevo alumno</button>
       </div>
       <div class="row g-2 mb-3" style="max-width:500px">
-        <div class="col-md-7"><input class="form-control" id="alumno-filtro-texto" placeholder="Buscar por nombre, legajo, teléfono o sector"></div>
-        <div class="col-md-5"><input class="form-control" id="alumno-filtro-curso" placeholder="Filtrar por curso / división"></div>
+        <div class="col-md-7"><select class="form-select mb-1" id="alumno-buscar-campo"><option value="apellido">Apellido</option><option value="nombre">Nombre</option><option value="legajo">Legajo</option><option value="telefono">Teléfono</option><option value="sector">Sector</option></select><input class="form-control" id="alumno-filtro-texto" placeholder="Empieza con…"></div>
+        <div class="col-md-5"><input class="form-control" id="alumno-filtro-curso" placeholder="Curso / división exacto"></div>
       </div>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-alumnos-masivo">Eliminar seleccionados</button>
-        <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-alumnos">Exportar a Excel</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-alumnos">Exportar página a Excel</button>
       </div>
       <div class="table-responsive">
       <table class="table table-bordered tabla-practicas">
         <thead><tr><th><input type="checkbox" id="chk-todos-alumnos"></th><th>Legajo</th><th>Apellido y nombre</th><th>Curso</th><th>Sector</th><th>Email</th><th>Teléfono</th><th></th></tr></thead>
-        <tbody id="tabla-alumnos"></tbody>
+        <tbody data-remote-page="true" id="tabla-alumnos"></tbody>
       </table>
       </div>
     </section>
@@ -436,9 +436,9 @@
 
       <div class="d-flex flex-wrap gap-2 mb-3 card p-3 shadow-sm filtros-horizontales align-items-end">
         <div class="filtro-item"><label class="form-label small mb-1">Alumno</label><input class="form-control" id="f-alumno" placeholder="Nombre o legajo"></div>
-        <div class="filtro-item"><label class="form-label small mb-1">Lugar</label><input class="form-control" id="f-lugar" placeholder="Lugar"></div>
-        <div class="filtro-item"><label class="form-label small mb-1">Tutor</label><input class="form-control" id="f-tutor" placeholder="Tutor"></div>
-        <div class="filtro-item"><label class="form-label small mb-1">Sector</label><input class="form-control" id="f-sector" placeholder="Sector"></div>
+        <div class="filtro-item"><label class="form-label small mb-1">Lugar</label><input class="form-control" id="f-lugar" placeholder="Lugar exacto"></div>
+        <div class="filtro-item"><label class="form-label small mb-1">Tutor</label><input class="form-control" id="f-tutor" placeholder="Tutor exacto"></div>
+        <div class="filtro-item"><label class="form-label small mb-1">Tipo</label><select class="form-select" id="f-tipo"><option value="">Todos</option><option value="interna">Interna</option><option value="externa">Externa</option><option value="interescolar">Interescolar</option></select></div><div class="filtro-item"><label class="form-label small mb-1">Sector</label><input class="form-control" id="f-sector" placeholder="Sector exacto"></div>
         <div class="filtro-item"><label class="form-label small mb-1">Desde</label><input type="date" class="form-control" id="f-desde"></div>
         <div class="filtro-item"><label class="form-label small mb-1">Hasta</label><input type="date" class="form-control" id="f-hasta"></div>
         <div class="d-flex gap-2 pb-1">
@@ -455,7 +455,7 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-practicas-masivo">Eliminar seleccionadas</button>
-          <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-practicas">Exportar a Excel</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-exportar-practicas">Exportar página y calcular horas</button>
         </div>
       </div>
 
@@ -464,7 +464,7 @@
         <thead>
           <tr>
             <th><input type="checkbox" id="chk-todas-practicas"></th>
-            <th>Período</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Sector</th>
+            <th>Período</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado del período</th><th>Sector</th>
             <th>Horario</th>
             <th>Hs./día</th>
             <th>Días/sem.</th>
@@ -473,7 +473,7 @@
             <th>Tutor</th><th>Contacto</th><th colspan="2"></th>
           </tr>
         </thead>
-        <tbody id="tabla-practicas"></tbody>
+        <tbody data-remote-page="true" id="tabla-practicas"></tbody>
       </table>
       </div>
     </section>
@@ -550,7 +550,7 @@
     <!-- ---------- INFORMES ---------- -->
     <section class="vista" id="vista-informes">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <h3>Informes de PP presentados</h3>
+        <h3>Informes de PP presentados</h3><button id="btn-calcular-cumplimiento" class="btn btn-outline-secondary btn-sm ms-2" type="button">Calcular cumplimiento completo de alumnos filtrados</button>
         <button class="btn btn-primary btn-sm" id="btn-nuevo-informe">+ Registrar informe</button>
       </div>
       <div class="card p-3 shadow-sm mb-3">
@@ -558,8 +558,8 @@
       </div>
       <div class="row g-2 mb-3">
         <div class="col-md-3"><input class="form-control" id="if-alumno" placeholder="Alumno o legajo"></div>
-        <div class="col-md-3"><input class="form-control" id="if-lugar" placeholder="Lugar de práctica"></div>
-        <div class="col-md-2"><input class="form-control" id="if-titulo" placeholder="Título"></div>
+        <div class="col-md-3"><input class="form-control" id="if-lugar" placeholder="Lugar exacto"></div>
+        <div class="col-md-2"><input class="form-control" id="if-titulo" placeholder="Título: empieza con…"></div>
         <div class="col-md-2">
           <select class="form-select" id="if-estado">
             <option value="">Todos los estados</option>
@@ -585,7 +585,7 @@
       <h5>Detalle de informes registrados</h5>
       <div class="table-responsive"><table class="table table-bordered">
           <thead><tr><th>Alumno</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Práctica</th><th>Enlace</th></tr></thead>
-          <tbody id="tabla-informes"></tbody>
+          <tbody data-remote-page="true" id="tabla-informes"></tbody>
       </table></div>
     </section>
 
@@ -619,11 +619,11 @@
     </div>
 
     <!-- ---------- RESUMEN POR PRACTICA ---------- -->
-    <section class="vista" id="vista-resumen">
+    <section class="vista" id="vista-resumen"><p class="alert alert-info">Elegí los filtros y pulsá Buscar para calcular el resumen completo.</p>
       <h3>Resumen por práctica</h3>
       <p class="text-muted">Agrupa las prácticas por lugar: para cada uno mostrás cuántos alumnos pasaron por ahí, cuántas horas realizaron en total, cuántos presentaron el informe y cuántos tienen faltas registradas. "Ver alumnos" abre el detalle uno por uno.</p>
       <div class="row g-2 mb-3">
-        <div class="col-md-3"><input class="form-control" id="rp-lugar" placeholder="Lugar"></div>
+        <div class="col-md-3"><input class="form-control" id="rp-lugar" placeholder="Lugar exacto"></div>
         <div class="col-md-2">
           <select class="form-select" id="rp-tipo">
             <option value="">Todos los tipos</option>
@@ -725,11 +725,11 @@
       </select>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-faltas-masivo">Eliminar seleccionadas</button>
-<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-faltas">Exportar faltas a Excel</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-faltas">Exportar todas las faltas filtradas</button>
       </div>
       <table class="table table-bordered">
         <thead><tr><th><input type="checkbox" id="chk-todas-faltas"></th><th>Fecha</th><th>Alumno</th><th>Justificada</th><th>Motivo</th><th></th></tr></thead>
-        <tbody id="tabla-faltas"></tbody>
+        <tbody data-remote-page="true" id="tabla-faltas"></tbody>
       </table>
     </section>
 
@@ -752,10 +752,10 @@
     <section class="vista" id="vista-asistencia">
       <h3>Registro de asistencia</h3>
       <p class="text-muted">El sistema genera “Presente” cuando termina cada jornada programada. Confirmá el parte real y corregí ausencias o tardanzas; las horas se recalculan con esos estados. Retirar una jornada impide que vuelva a generarse.</p>
-      <form id="form-asistencia" class="row g-2 card p-3 shadow-sm mb-4"><div class="col-12"><label class="form-label">Práctica correspondiente</label><select class="form-select" id="asist-practica" required><option value="">Seleccionar práctica</option></select></div>
+      <div class="d-flex gap-2 flex-wrap mb-2"><button id="btn-preparar-asistencia" class="btn btn-outline-primary btn-sm" type="button">Registrar asistencia manual</button><button id="btn-sincronizar-asistencia" class="btn btn-outline-secondary btn-sm" type="button">Sincronizar jornadas pendientes</button></div><form id="form-asistencia" class="d-none row g-2 card p-3 shadow-sm mb-4"><div class="col-12"><label class="form-label">Práctica correspondiente</label><select class="form-select" id="asist-practica" required><option value="">Seleccionar práctica</option></select></div>
         <div class="col-md-3"><select class="form-select" id="asist-alumno" required></select></div>
         <div class="col-md-2"><input type="date" class="form-control" id="asist-fecha" required></div>
-        <div class="col-md-2"><input class="form-control" id="asist-lugar" list="lugares-list" autocomplete="off" placeholder="Lugar"></div>
+        <div class="col-md-2"><input class="form-control" id="asist-lugar" list="lugares-list" autocomplete="off" placeholder="Lugar exacto"></div>
         <div class="col-md-2">
           <select class="form-select" id="asist-tipo">
             <option value="interna">Interna</option>
@@ -774,22 +774,23 @@
       <div class="row g-2 mb-3">
         <div class="col-md-4"><select class="form-select" id="asist-filtro-alumno"><option value="">Todos los alumnos</option></select></div>
         <div class="col-md-3"><input type="date" class="form-control" id="asist-filtro-fecha" title="Filtrar por fecha"></div>
-        <div class="col-md-3"><input class="form-control" id="asist-filtro-lugar" list="lugares-list" placeholder="Filtrar por lugar"></div>
+        <div class="col-md-3"><input class="form-control" id="asist-filtro-lugar" list="lugares-list" placeholder="Lugar exacto"></div>
         <div class="col-md-2"><button class="btn btn-outline-secondary w-100" type="button" id="btn-limpiar-asistencia">Limpiar</button></div>
       </div>
+      <div class="row g-2 mb-3"><div class="col-md-3"><label class="form-label small">Desde</label><input type="date" class="form-control" id="asist-filtro-desde"></div><div class="col-md-3"><label class="form-label small">Hasta</label><input type="date" class="form-control" id="asist-filtro-hasta"></div><div class="col-md-3"><label class="form-label small">Tipo</label><select class="form-select" id="asist-filtro-tipo"><option value="">Todos</option><option value="interna">Interna</option><option value="externa">Externa</option><option value="interescolar">Interescolar</option></select></div><div class="col-md-3"><label class="form-label small">Estado</label><select class="form-select" id="asist-filtro-estado"><option value="">Todos</option><option value="presente">Presente</option><option value="tardanza">Tardanza</option><option value="ausente_justificado">Ausente justificado</option><option value="ausente_injustificado">Ausente injustificado</option><option value="pendiente">Pendiente</option><option value="reprogramado">Reprogramado</option></select></div></div>
       <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-outline-danger" id="btn-eliminar-asistencia-masivo">Eliminar seleccionadas</button>
-<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-asistencias">Exportar asistencias a Excel</button>
+<button type="button" class="btn btn-outline-secondary btn-sm" id="btn-exportar-asistencias">Exportar todas las asistencias filtradas</button>
       </div>
       <table class="table table-bordered">
         <thead><tr><th><input type="checkbox" id="chk-todas-asistencia"></th><th>Fecha</th><th>Alumno</th><th>Lugar</th><th>Tipo</th><th>Estado</th><th>Entrada</th><th>Salida</th><th>Obs.</th><th></th></tr></thead>
-        <tbody id="tabla-asistencia"></tbody>
+        <tbody data-remote-page="true" id="tabla-asistencia"></tbody>
       </table>
     </section>
 
     <!-- ---------- CONFIGURACIÓN ---------- -->
     <section class="vista" id="vista-configuracion">
-      <h3>Configuración</h3>
+      <h3>Configuración</h3><div class="card p-3 mb-3 admin-only"><h5>Preparar búsquedas del historial</h5><p>Prepará los registros existentes una sola vez para buscar sin distinguir mayúsculas o tildes. Cada paso revisa hasta 20 registros. Los nuevos se preparan al guardarlos. Si la cuota está agotada, esperá su renovación.</p><div class="d-flex gap-2"><select id="busqueda-preparar-coleccion" class="form-select"><option value="alumnos">Alumnos</option><option value="practicas">Prácticas</option><option value="informes">Informes</option><option value="asistencias">Asistencias antiguas</option><option value="usuarios">Usuarios</option></select><button type="button" class="btn btn-outline-primary" id="btn-preparar-busqueda">Preparar próximos 20</button></div><p id="busqueda-progreso" class="mt-2 mb-0" role="status"></p></div>
       <div class="card p-4 shadow-sm" style="max-width:680px">
         <h5>Contenido visible en el dashboard</h5>
         <p class="text-muted">Elegí qué bloques se muestran en el panel general para todos los usuarios.</p>
@@ -837,7 +838,7 @@
 
       <table class="table table-bordered mb-3">
         <thead><tr><th><input type="checkbox" id="chk-todas-notificaciones" checked></th><th>Fecha</th><th>Alumno</th><th>Email</th><th>Lugar</th></tr></thead>
-        <tbody id="tabla-notif-proximas"></tbody>
+        <tbody data-remote-page="true" id="tabla-notif-proximas"></tbody>
       </table>
 
       <div class="card p-3 shadow-sm mb-3" style="max-width:640px">
@@ -879,10 +880,10 @@
 
     <!-- ---------- USUARIOS ---------- -->
     <section class="vista" id="vista-usuarios">
-      <h3>Usuarios del sistema (<span id="usuarios-count">0</span>)</h3>
+      <h3>Usuarios del sistema (<span id="usuarios-count">0</span>)</h3><div class="row g-2 mb-3"><div class="col-md-6"><input id="usuarios-filtro-texto" class="form-control" placeholder="Nombre: empieza con…"></div><div class="col-md-4"><select id="usuarios-filtro-rol" class="form-select"><option value="">Todos los roles</option><option value="admin">Administrador</option><option value="tutor">Tutor</option><option value="alumno">Alumno</option></select></div></div>
       <table class="table table-bordered mb-4">
         <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Alumno vinculado</th></tr></thead>
-        <tbody id="tabla-usuarios"></tbody>
+        <tbody data-remote-page="true" id="tabla-usuarios"></tbody>
       </table>
       <div class="alert alert-info">
         Para crear una cuenta nueva: primero creála en
@@ -974,7 +975,7 @@
     </section>
 
     <!-- ---------- OPTIMIZAR DATOS ---------- -->
-    <section class="vista" id="vista-duplicados">
+    <section class="vista" id="vista-duplicados"><p class="alert alert-info">Usá Buscar duplicados o Buscar períodos agrupables cuando necesites revisar el historial.</p>
       <h3>Optimizar datos</h3>
       <div class="card card-alumnos p-3 shadow-sm mb-4">
         <h5>Fusionar alumnos duplicados</h5>

@@ -11,3 +11,5 @@ test('REST real del emulador guarda y lee arrays y campos anidados',()=>{db.set(
 test('REST real conserva campos con updateMask',()=>{db.set('rest_pruebas/a',{nombre:'Melissa'},true);const r=db.get('rest_pruebas/a');assert.equal(r.data.nombre,'Melissa');assert.equal(r.data.activo,true);});
 test('REST real consulta con filtro',()=>{const rows=db.list('rest_pruebas',['nombre','EQUAL','Melissa']);assert.equal(rows.length,1);assert.equal(rows[0].data.horas,4.5);});
 test('REST real rechaza precondición de versión incorrecta',()=>assert.throws(()=>db.commit([db.write('rest_pruebas/a',{horas:999},{updateTime:'2000-01-01T00:00:00Z'},true)])));
+
+test('REST real filtra ventanas con dos condiciones en servidor',()=>{db.set('rest_pruebas/futuro',{fecha:'2026-10-10',fechaFin:'2026-10-12'});db.set('rest_pruebas/actual',{fecha:'2026-09-28',fechaFin:'2026-10-02'});db.set('rest_pruebas/viejo',{fecha:'2026-08-01',fechaFin:'2026-08-10'});const rows=db.list('rest_pruebas',[['fechaFin','GREATER_THAN_OR_EQUAL','2026-09-30'],['fecha','LESS_THAN_OR_EQUAL','2026-09-30']]);assert.deepEqual(Array.from(rows,r=>r.id),['actual']);});

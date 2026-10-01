@@ -1,8 +1,8 @@
 import {clock, datesFor, finished, attendanceId, attendanceMatches, chooseAttendance, manualHours, attendanceState} from './domain.mjs';
 
-export async function synchronizeAttendance({db,api,practices,records,now=clock()}) {
+export async function synchronizeAttendance({db,api,practices,records,now=clock(),maxOperations=30,onPending=()=>{}}) {
   const {doc,runTransaction}=api;
-  let created=0;
+  let created=0,operations=0,pending=false;
   for(const p of practices){
     if(p.archivada||p.estado==='cancelada'||manualHours(p))continue;
     const dates=datesFor(p);
@@ -12,6 +12,14 @@ export async function synchronizeAttendance({db,api,practices,records,now=clock(
       const legacy=records.filter(r=>!r.duplicadaEn&&r.id!==id&&r.fecha===date&&attendanceMatches(r,p,practices));
       const ambiguous=records.some(r=>!r.practicaId&&!r.duplicadaEn&&r.fecha===date&&r.alumnoId===p.alumnoId&&r.lugar===p.lugar&&!attendanceMatches(r,p,practices));
       if(ambiguous&&!legacy.length)continue;
+      // La consulta inicial ya contiene estas jornadas: no releer registros estables.
+      const known=records.find(r=>r.id===id);
+      if(known&&!known.duplicadaEn&&!known.fueraCronograma&&!legacy.length&&
+         known.practicaId===p.id&&known.alumnoId===p.alumnoId&&known.lugar===(p.lugar||'')&&known.tipo===(p.tipo||'interna')&&
+         (known.origen!=='automatico'||known.editado||known.confirmado||known.suprimido||
+          (known.horaEntrada===(p.horaInicio||'')&&known.horaSalida===(p.horaFin||''))))continue;
+      if(operations>=maxOperations){pending=true;continue;}
+      operations++;
       await runTransaction(db,async tx=>{
         const current=await tx.get(ref);
         const snapshots=[];
@@ -41,10 +49,13 @@ export async function synchronizeAttendance({db,api,practices,records,now=clock(
     if(!r.practicaId||r.duplicadaEn)continue;
     const p=byId.get(r.practicaId),invalid=!p||p.archivada||p.estado==='cancelada'||!datesFor(p).includes(r.fecha)||r.alumnoId!==p.alumnoId;
     if(invalid && !r.fueraCronograma){
+      if(operations>=maxOperations){pending=true;continue;}
+      operations++;
       const ref=doc(db,'asistencias',r.id);
       await runTransaction(db,async tx=>{const s=await tx.get(ref);if(s.exists())tx.update(ref,{fueraCronograma:true});});
     }
   }
+  if(pending)onPending();
   return created;
 }
 

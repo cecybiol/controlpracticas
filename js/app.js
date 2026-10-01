@@ -2,19 +2,29 @@ import { firebaseConfig } from "./firebase-config.js";
 import { initApp as initDrive, buscarEnDrive, cargarTodosLosInformes } from "./drive.js";
 
 import { clock, addDays, datesFor, daysFor, calendarState, calculatePractice, manualHours, attendanceId, attendanceState, attendanceMatches, dayHours, targets, notificationCandidates, parseDays, validDate, num, duration, practiceId, expectedAgreementNames, validEmail } from "./domain.mjs";
+import { createPager, pageSpec, searchText, searchableFields } from "./record-pages.mjs";
+import { createFirestoreAccess, firestoreMessage } from "./firestore-access.mjs";
 import { synchronizeAttendance, validateAttendance } from "./attendance-store.mjs";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-  getDocs, getDoc, query, orderBy, setDoc, where, limit, runTransaction, writeBatch,
+  getFirestore, collection, doc, addDoc as sdkAddDoc, updateDoc as sdkUpdateDoc, deleteDoc as sdkDeleteDoc,
+  getDocs as sdkGetDocs, getDoc as sdkGetDoc, query, orderBy, setDoc as sdkSetDoc, where, limit, runTransaction as sdkRunTransaction, writeBatch as sdkWriteBatch, queryEqual, refEqual, startAfter, documentId,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const firestoreAccess = createFirestoreAccess({getDocs:sdkGetDocs,getDoc:sdkGetDoc,queryEqual,refEqual},{maxEntries:120});
+const {getDocs,getDoc}=firestoreAccess;
+// Toda escritura local invalida lecturas; nunca conservar datos de otro usuario.
+async function mutate(fn,args){firestoreAccess.guard();try{return await fn(...args);}catch(err){firestoreAccess.failed(err);throw err;}finally{firestoreAccess.clear();resetRecordPages();ultimaSincronizacion=0;}}
+function indexedArgs(args,complete=false){const [ref,data,...rest]=args,path=ref.path||'',name=path.split('/')[0],input={...data};if(complete&&name==='practicas'&&input.fecha&&!input.fechaFin)input.fechaFin=input.fecha;return [ref,{...input,...searchableFields(name,input)},...rest];}
+const addDoc=(...args)=>mutate(sdkAddDoc,indexedArgs(args,true)),updateDoc=(...args)=>mutate(sdkUpdateDoc,indexedArgs(args)),deleteDoc=(...args)=>mutate(sdkDeleteDoc,args),setDoc=(...args)=>mutate(sdkSetDoc,indexedArgs(args,true));
+const runTransaction=(...args)=>mutate(sdkRunTransaction,args);
+function writeBatch(...args){const batch=sdkWriteBatch(...args),commit=batch.commit.bind(batch);batch.commit=(...xs)=>mutate(commit,xs);for(const method of ["set","update"]){const original=batch[method].bind(batch);batch[method]=(...xs)=>original(...indexedArgs(xs,method==="set"));}return batch;}
 let usuarioActual = null; // { uid, nombre, rol, email }
 let cacheAlumnos = [];    // se recarga al entrar a cada vista que la necesita
 let cacheLugares = [];    // catálogo de lugares para el combo desplegable de "Lugar"
@@ -31,6 +41,66 @@ let ultimosGruposCorrelativos = null; // prácticas de jornadas consecutivas lis
 let ultimoCalculoEstadisticas = [];
 let estadOrden = { campo: "nombre", asc: true };
 let objetivoHoras = { interna: 0, externa: 0, interescolar: 0 };
+
+// Listados acotados; historial completo sólo en consultas explícitas de horas/informes.
+const recordPagers=new Map(),studentChoices=new Map();
+function resetRecordPages(){for(const pager of recordPagers.values())pager.reset();recordPagers.clear();}
+const valueOf=id=>document.getElementById(id)?.value.trim()||'';
+const rowData=d=>({id:d.id,...d.data()});
+function delayed(fn,ms=450){let timer;return()=>{clearTimeout(timer);timer=setTimeout(()=>Promise.resolve(fn()).catch(e=>mostrarAlerta(firestoreMessage(e),'danger')),ms);};}
+function queryFor(spec,cursor=null,size=null){const clauses=spec.filters.map(([field,op,value])=>where(field==='__name__'?documentId():field,op,value));for(const [field,dir] of spec.order)clauses.push(orderBy(field==='__name__'?documentId():field,dir));if(cursor)clauses.push(startAfter(cursor));if(size)clauses.push(limit(size));return query(collection(db,spec.collection),...clauses);}
+async function recordsPage(tableId,spec,move,loader){
+ let pager=recordPagers.get(tableId);if(!pager){pager=createPager(async(spec,cursor,size)=>(await getDocs(queryFor(spec,cursor,size))).docs);recordPagers.set(tableId,pager);}
+ const page=await pager.load(spec,typeof move==='number'?move:0);if(!page)return null;
+ const body=document.getElementById(tableId);body.dataset.remotePage='true';
+ let nav=document.getElementById(tableId+'-remote-nav');if(!nav){nav=document.createElement('div');nav.id=tableId+'-remote-nav';nav.className='d-flex align-items-center gap-2 flex-wrap my-2';body.closest('table').insertAdjacentElement('afterend',nav);}
+ nav.innerHTML=`<button class="btn btn-sm btn-outline-secondary" ${page.previous?'':'disabled'}>Anterior</button><span class="small">Página ${page.number} · hasta 20 registros por consulta</span><button class="btn btn-sm btn-outline-secondary" ${page.more?'':'disabled'}>Siguiente</button><button class="btn btn-sm btn-outline-secondary">Actualizar</button>`;
+ const buttons=nav.querySelectorAll('button');const act=async move=>{buttons.forEach(b=>b.disabled=true);try{await loader(move);}catch(err){mostrarAlerta(firestoreMessage(err),'danger');buttons.forEach(b=>b.disabled=false);}};
+ buttons[0].onclick=()=>act(-1);buttons[1].onclick=()=>act(1);buttons[2].onclick=()=>{pager.reset();firestoreAccess.clear();act(0);};
+ return page;
+}
+async function registroPorId(name,id){if(!id)return null;const snap=await getDoc(doc(db,name,id));return snap.exists()?rowData(snap):null;}
+async function guardarPracticaConInformes(id,data,previous){
+ if(previous?.lugar!==data.lugar){const related=await getDocs(query(collection(db,'informes'),where('practicaId','==',id)));if(related.docs.length>450)throw new Error('Esta práctica tiene más de 450 informes vinculados; requiere una actualización por tandas.');const batch=writeBatch(db);batch.update(doc(db,'practicas',id),data);for(const report of related.docs)batch.update(report.ref,{lugar:data.lugar||''});await batch.commit();}
+ else await updateDoc(doc(db,'practicas',id),data);
+}
+async function relatedStudents(rows){
+ const ids=[...new Set(rows.map(r=>r.alumnoId).filter(Boolean))],cached=[],missing=[];
+ for(const id of ids){const result=firestoreAccess.cachedDoc(doc(db,'alumnos',id));if(result)cached.push(result);else missing.push(id);}
+ const snapshots=await Promise.all(cached);
+ for(let i=0;i<missing.length;i+=20){const snap=await getDocs(query(collection(db,'alumnos'),where(documentId(),'in',missing.slice(i,i+20)),limit(20)));snapshots.push(...snap.docs);}
+ return Object.fromEntries(snapshots.filter(s=>s.exists()).map(s=>{const a=rowData(s);return [a.id,a];}));
+}
+
+function addStudentOptions(id,students){const select=document.getElementById(id);if(!select)return;const chosen=select.value;for(const a of students){if(![...select.options].some(o=>o.value===a.id)){const o=document.createElement('option');o.value=a.id;o.textContent=`${nombreCompleto(a)} (${a.legajo||''})`;select.append(o);}}select.value=chosen;}
+function chosenStudent(id){const value=valueOf(id);if(!value)return '';const chosen=studentChoices.get(id)?.get(value);if(!chosen)throw new Error('Elegí el alumno entre las sugerencias de búsqueda. Podés buscar por apellido, nombre o legajo.');return chosen;}
+function attachStudentSearch(id){
+ const control=document.getElementById(id);if(!control)return;
+ const isSelect=control.tagName==='SELECT',wrap=document.createElement('div');wrap.className='d-flex gap-1 flex-wrap mb-1';
+ const mode=document.createElement('select');mode.className='form-select form-select-sm';mode.style.maxWidth='125px';mode.setAttribute('aria-label','Buscar alumno por');mode.innerHTML='<option value="apellido">Apellido</option><option value="nombre">Nombre</option><option value="legajo">Legajo</option>';
+ const input=isSelect?document.createElement('input'):control;if(isSelect){input.className='form-control form-control-sm';input.placeholder='Buscar alumno…';input.setAttribute('aria-label','Buscar alumno');control.insertAdjacentElement('beforebegin',wrap);wrap.append(mode,input);}else{control.insertAdjacentElement('beforebegin',wrap);wrap.append(mode);}
+ const datalist=document.createElement('datalist');datalist.id=id+'-resultados';input.setAttribute('list',datalist.id);input.insertAdjacentElement('afterend',datalist);
+ let serial=0;const choices=new Map();studentChoices.set(id,choices);
+ const search=delayed(async()=>{const term=input.value.trim(),token=++serial;if(!term||choices.has(term))return;if(term.length<2&&mode.value!=='legajo')return;
+  const spec=pageSpec('alumnos',{prefix:term,searchField:'busqueda_'+mode.value});const snap=await getDocs(queryFor(spec,null,20));if(token!==serial||input.value.trim()!==term)return;
+  datalist.replaceChildren();for(const a of snap.docs.map(rowData).filter(a=>!a.archivado)){const label=`${nombreCompleto(a)} (${a.legajo||a.id})`;choices.set(label,a.id);const option=document.createElement('option');option.value=label;datalist.append(option);if(isSelect)addStudentOptions(id,[a]);}
+ });input.addEventListener('input',search);mode.onchange=()=>{serial++;datalist.replaceChildren();search();};
+ if(isSelect)input.addEventListener('change',()=>{const chosen=choices.get(input.value);if(chosen){control.value=chosen;control.dispatchEvent(new window.Event('change'));}});
+}
+function attendanceSpec(){return pageSpec('asistencias',{equal:{fecha:valueOf('asist-filtro-fecha'),alumnoId:valueOf('asist-filtro-alumno'),lugar:valueOf('asist-filtro-lugar'),tipo:valueOf('asist-filtro-tipo'),estado:valueOf('asist-filtro-estado')},from:valueOf('asist-filtro-desde'),to:valueOf('asist-filtro-hasta')});}
+async function readForStudents(name,ids){const unique=[...new Set(ids)].filter(Boolean),rows=[];for(let i=0;i<unique.length;i+=30){const snap=await getDocs(query(collection(db,name),where('alumnoId','in',unique.slice(i,i+30))));rows.push(...snap.docs.map(rowData));}return rows;}
+async function practicasAlumno(id){
+ const [practices,attendance]=await Promise.all([getDocs(query(collection(db,'practicas'),where('alumnoId','==',id))),getDocs(query(collection(db,'asistencias'),where('alumnoId','==',id)))]);
+ const raw=practices.docs.map(rowData).filter(p=>!p.archivada),records=attendance.docs.map(rowData);return raw.map(p=>calculatePractice(p,records,raw));
+}
+window.consultarHorasPractica=async(id,alumnoId)=>{
+ try{const own=await practicasAlumno(alumnoId),p=own.find(p=>p.id===id);if(!p)return false;
+  const real=own.reduce((n,p)=>n+horasCumplidas(p),0),total=own.reduce((n,p)=>n+horasCumplidas(p)+horasPendientes(p),0);
+  acumuladosPracticas[alumnoId]={horasRealizadas:real,totalHoras:total};
+  for(const row of document.getElementById('tabla-practicas').querySelectorAll('[data-practica]')){const item=own.find(p=>p.id===row.dataset.practica);if(!item)continue;const hours=row.querySelector('[data-horas-practica]');if(hours)hours.textContent=`${horasCumplidas(item).toFixed(2)} / ${num(item.horasPlanificadas).toFixed(2)}${item.jornadasPendientes||item.conflictosAsistencia?' · revisar jornadas':''}`;row.querySelector('[data-acum-real]').textContent=real.toFixed(1);row.querySelector('[data-acum-total]').textContent=total.toFixed(1);}
+  ultimasPracticasFiltradas=ultimasPracticasFiltradas.map(row=>own.find(p=>p.id===row.id)?{...row,...own.find(p=>p.id===row.id)}:row);return true;
+ }catch(err){mostrarAlerta(firestoreMessage(err),'danger');return false;}
+};
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -146,8 +216,8 @@ async function lecturaAsistencias() {
  const q=usuarioActual?.rol === "alumno" ? query(collection(db,"asistencias"),where("alumnoId","==",usuarioActual.alumnoId||"__sin_alumno__")) : collection(db,"asistencias");
  const snap=await getDocs(q);return snap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.duplicadaEn);
 }
-async function enriquecerPracticas(raw) {
- const records=await lecturaAsistencias();const live=raw.filter(p=>!p.archivada);
+async function enriquecerPracticas(raw,records=null) {
+ records=records||await lecturaAsistencias();const live=raw.filter(p=>!p.archivada);
  return live.map(p=>calculatePractice(p,records,live));
 }
 function diasSeleccionadosFormulario() {
@@ -184,6 +254,7 @@ function cerrarModal(id) {
 // Paginación visual reutilizable: toda tabla extensa muestra 20 filas por página.
 const PAGINA_TAM = 20;
 function paginarTbody(tbody, pagina = 1) {
+  if(tbody.dataset.remotePage)return;
   const filas = [...tbody.children].filter(x => x.tagName === "TR");
   const totalPaginas = Math.max(1, Math.ceil(filas.length / PAGINA_TAM));
   const actual = Math.min(Math.max(1, pagina), totalPaginas);
@@ -250,22 +321,22 @@ function mostrarVista(nombre) {
 function cargarVista(nombre) {
   const cargadores = {
     dashboard: cargarDashboard,
-    estadisticas: cargarEstadisticas,
+    estadisticas: () => {},
     alumnos: cargarAlumnos,
     practicas: () => cargarPracticas(),
     informes: cargarInformes,
-    resumen: cargarResumenPracticas,
+    resumen: () => {},
     faltas: cargarFaltas,
     asistencia: cargarAsistencia,
     notificaciones: cargarNotificaciones,
     usuarios: cargarUsuarios,
     drive: () => {},
     importar: () => {},
-    duplicados: cargarOptimizacion,
+    duplicados: () => {},
     configuracion: cargarConfiguracion,
     "mi-practica": cargarMiPractica,
   };
-  Promise.resolve().then(async () => { if(usuarioActual?.rol !== "alumno" && !["drive","usuarios","importar","configuracion"].includes(nombre)) await sincronizarAsistenciasAutomaticas(); return cargadores[nombre]?.(); }).catch(err => mostrarAlerta(`No se pudo cargar la vista: ${err.message || err}`, "danger"));
+  Promise.resolve().then(async () => { return cargadores[nombre]?.(); }).catch(err => mostrarAlerta(`No se pudo cargar la vista: ${firestoreMessage(err)}`, "danger"));
 }
 
 document.querySelectorAll("[data-view]").forEach(a => {
@@ -293,12 +364,18 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
 document.getElementById("btn-logout").addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, async (user) => {
+  firestoreAccess.reset();resetRecordPages();preparationCursors.clear();for(const choices of studentChoices.values())choices.clear();document.querySelectorAll('datalist[id$="-resultados"]').forEach(el=>el.replaceChildren()); cacheAlumnos=[];cacheLugares=[];ultimaSincronizacion=0;
   if (user) {
     let perfil = { nombre: user.email, rol: "sin_perfil" };
     try {
       const snap = await getDoc(doc(db, "usuarios", user.uid));
       if (snap.exists()) perfil = snap.data();
-    } catch (e) { /* si todavía no existe el doc de perfil, seguimos con default */ }
+    } catch (e) {
+      usuarioActual=null;
+      document.getElementById("app-shell").classList.add("d-none");
+      document.getElementById("login-view").classList.remove("d-none");
+      const box=document.getElementById("login-error");box.textContent=firestoreMessage(e);box.classList.remove("d-none");return;
+    }
 
     usuarioActual = { uid: user.uid, email: user.email, ...perfil };
     document.getElementById("usuario-actual").textContent = `${usuarioActual.nombre} (${usuarioActual.rol})`;
@@ -315,9 +392,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("login-view").classList.add("d-none");
     document.getElementById("app-shell").classList.remove("d-none");
     mostrarVista(usuarioActual.rol === "alumno" ? "mi-practica" : "dashboard");
-    try { if(["admin","tutor"].includes(usuarioActual.rol)){await obtenerLugares(); poblarDatalistLugares();} } catch(err) { mostrarAlerta("No se pudo leer el catálogo de lugares. Revisá los permisos de Firebase.", "warning"); }
     if (["admin","tutor"].includes(usuarioActual.rol)) {
-      await sincronizarAsistenciasAutomaticas().catch(err=>mostrarAlerta(err.message,"danger"));
       revisarYEnviarNotificacionesAutomaticas();
     }
   } else {
@@ -442,7 +517,7 @@ function renderResumenAlumnosPractica() {
 document.getElementById("practica-alumno-buscar")?.addEventListener("input", renderSelectorAlumnosPractica);
 
 async function prepararListasPractica(p = {}) {
-  const [lugares, practicas] = await Promise.all([obtenerLugares(true).catch(() => []), obtenerPracticas()]);
+  const [lugares, recent] = await Promise.all([obtenerLugares().catch(() => []), getDocs(query(collection(db,"practicas"),orderBy("fecha","desc"),limit(20)))]);const practicas=recent.docs.map(rowData);
   const configurarLista = (selectId, nuevoId, ocultoId, valores, actual, etiquetaNuevo) => {
     const sel = document.getElementById(selectId), nuevo = document.getElementById(nuevoId), oculto = document.getElementById(ocultoId);
     const unicos = [...new Set(valores.filter(Boolean).map(v => String(v).trim()))].sort((a,b) => a.localeCompare(b));
@@ -458,13 +533,13 @@ async function prepararListasPractica(p = {}) {
   };
   const nombresLugares = [...lugares.map(x => x.nombre), ...practicas.map(x => x.lugar)];
   configurarLista("practica-lugar-select", "practica-lugar-nuevo", "practica-lugar", nombresLugares, p.lugar || "", "Agregar nuevo lugar");
-  configurarLista("practica-sector-select", "practica-sector-nuevo", "practica-sector", practicas.map(x => x.sector), p.sector || "", "Agregar nuevo sector");
+  configurarLista("practica-sector-select", "practica-sector-nuevo", "practica-sector", practicas.map(x => x.sector), p.sector || "", "Escribir otro sector");
 
   const tutores = new Map();
   practicas.filter(x => x.tutorResponsable).forEach(x => { const k=normalizarTexto(x.tutorResponsable); if(!tutores.has(k)) tutores.set(k, { nombre:x.tutorResponsable, email:x.tutorEmail || "", contacto:x.contacto || "" }); });
   if (p.tutorResponsable) tutores.set(normalizarTexto(p.tutorResponsable), { nombre:p.tutorResponsable, email:p.tutorEmail || "", contacto:p.contacto || "" });
   const tutorSel = document.getElementById("practica-tutor-select");
-  tutorSel.innerHTML = `<option value="">Seleccionar...</option>` + [...tutores.values()].sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t => `<option value="${escaparHTML(t.nombre)}" data-email="${escaparHTML(t.email)}" data-contacto="${escaparHTML(t.contacto)}">${escaparHTML(t.nombre)}</option>`).join("") + `<option value="__nuevo__">+ Agregar nuevo tutor</option>`;
+  tutorSel.innerHTML = `<option value="">Seleccionar...</option>` + [...tutores.values()].sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t => `<option value="${escaparHTML(t.nombre)}" data-email="${escaparHTML(t.email)}" data-contacto="${escaparHTML(t.contacto)}">${escaparHTML(t.nombre)}</option>`).join("") + `<option value="__nuevo__">+ Escribir otro tutor</option>`;
   tutorSel.value = p.tutorResponsable || "";
   const tutorInput = document.getElementById("practica-tutor"); tutorInput.value = p.tutorResponsable || ""; tutorInput.classList.toggle("d-none", !!p.tutorResponsable);
   tutorSel.onchange = () => {
@@ -475,16 +550,10 @@ async function prepararListasPractica(p = {}) {
   };
 }
 
-async function cargarAlumnos() {
-  const alumnos = await obtenerAlumnos(true);
-  const fTexto = document.getElementById("alumno-filtro-texto").value.trim().toLowerCase();
-  const fCurso = document.getElementById("alumno-filtro-curso").value.trim().toLowerCase();
-
-  const filtrados = alumnos.filter(a => {
-    if (fTexto && !(`${nombreCompleto(a)} ${a.legajo} ${a.telefono || ""} ${a.sector || ""}`.toLowerCase().includes(fTexto))) return false;
-    if (fCurso && !(a.curso || "").toLowerCase().includes(fCurso)) return false;
-    return true;
-  });
+async function cargarAlumnos(move=0) {
+  const spec=pageSpec('alumnos',{prefix:document.getElementById('alumno-filtro-texto').value,searchField:'busqueda_'+document.getElementById('alumno-buscar-campo').value,equal:{busqueda_curso:searchText(document.getElementById('alumno-filtro-curso').value)},direction:'asc'});
+  const page=await recordsPage('tabla-alumnos',spec,move,cargarAlumnos);if(!page)return;
+  const filtrados=page.docs.map(rowData).filter(a=>!a.archivado);
   ultimosAlumnosFiltrados = filtrados;
 
   const chkTodos = document.getElementById("chk-todos-alumnos");
@@ -506,7 +575,7 @@ document.getElementById("chk-todos-alumnos")?.addEventListener("change", (e) => 
 });
 
 async function archivarAlumnos(ids){
- const practicas=(await obtenerPracticas()).filter(p=>ids.includes(p.alumnoId));
+ const practicas=await readForStudents("practicas",ids);
  if(ids.length+practicas.length>450)throw new Error("Seleccioná menos alumnos: esta operación debe ser atómica.");
  const batch=writeBatch(db);
  ids.forEach(id=>batch.update(doc(db,"alumnos",id),{archivado:true}));
@@ -526,8 +595,8 @@ document.getElementById("btn-exportar-alumnos")?.addEventListener("click", () =>
   exportarXLSX("alumnos.xlsx", "Alumnos", encabezados, filas);
 });
 
-document.getElementById("alumno-filtro-texto").addEventListener("input", cargarAlumnos);
-document.getElementById("alumno-filtro-curso").addEventListener("input", cargarAlumnos);
+document.getElementById("alumno-filtro-texto").addEventListener("input", delayed(cargarAlumnos));
+document.getElementById("alumno-filtro-curso").addEventListener("input", delayed(cargarAlumnos));
 
 document.getElementById("btn-nuevo-alumno").addEventListener("click", () => {
   document.getElementById("form-alumno").reset();
@@ -539,7 +608,7 @@ document.getElementById("btn-nuevo-alumno").addEventListener("click", () => {
 });
 
 async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
-  const [practicas, snapAsistencias] = await Promise.all([obtenerPracticas(), getDocs(collection(db, "asistencias"))]);
+  const [practicas, snapAsistencias] = await Promise.all([practicasAlumno(alumnoId), getDocs(query(collection(db, "asistencias"),where("alumnoId","==",alumnoId)))]);
   const asistencias = snapAsistencias.docs.map(d => d.data()).filter(r => r.alumnoId === alumnoId && !r.duplicadaEn && !r.suprimido && !r.fueraCronograma);
   const propias = practicas.filter(p => p.alumnoId === alumnoId).sort((a, b) => b.fecha.localeCompare(a.fecha));
   const realizadas = propias.filter(practicaRealizada);
@@ -562,8 +631,7 @@ async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
 }
 
 window.editarAlumno = async (id) => {
-  const alumnos = await obtenerAlumnos();
-  const a = alumnos.find(x => x.id === id);
+  const a = await registroPorId("alumnos",id);if(!a)return;
   document.getElementById("alumno-id").value = a.id;
   document.getElementById("alumno-legajo").value = a.legajo;
   document.getElementById("alumno-nombre").value = a.nombre;
@@ -661,45 +729,14 @@ async function obtenerPracticas() {
   return (await enriquecerPracticas(await lecturaPracticas())).map(p=>({...p,alumno:mapa[p.alumnoId]})).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
 }
 
-async function cargarPracticas() {
-  const todasLasPracticas = await obtenerPracticas();
-
-  // Acumulados por alumno (sobre TODAS sus prácticas, no solo las filtradas),
-  // para mostrar en la tabla cuánto lleva realizado/total cada alumno además
-  // de las horas puntuales del día de esa fila.
-  const acumPorAlumno = {};
-  todasLasPracticas.forEach(p => {
-    if (!p.alumnoId) return;
-    if (!acumPorAlumno[p.alumnoId]) acumPorAlumno[p.alumnoId] = { totalHoras: 0, horasRealizadas: 0 };
-    const horas = numeroHoras(p.horasTotales);
-    acumPorAlumno[p.alumnoId].totalHoras += horasCumplidas(p) + horasPendientes(p);
-    acumPorAlumno[p.alumnoId].horasRealizadas += horasCumplidas(p);
-  });
-
-  let practicas = todasLasPracticas;
-
-  const fAlumno = document.getElementById("f-alumno").value.trim().toLowerCase();
-  const fLugar = document.getElementById("f-lugar").value.trim().toLowerCase();
-  const fTutor = document.getElementById("f-tutor").value.trim().toLowerCase();
-  const fSector = document.getElementById("f-sector").value.trim().toLowerCase();
-  const fDesde = document.getElementById("f-desde").value;
-  const fHasta = document.getElementById("f-hasta").value;
-
-  practicas = practicas.filter(p => {
-    if (!p.alumno) return false;
-    if (fAlumno && !(`${p.alumno.nombre} ${p.alumno.apellido} ${p.alumno.legajo}`.toLowerCase().includes(fAlumno))) return false;
-    if (fLugar && !p.lugar?.toLowerCase().includes(fLugar)) return false;
-    if (fTutor && !p.tutorResponsable?.toLowerCase().includes(fTutor)) return false;
-    if (fSector && !p.sector?.toLowerCase().includes(fSector)) return false;
-    // Se compara por superposición de rango: la práctica entra si su fecha fin
-    // no es anterior al "desde" buscado, y su fecha inicio no es posterior al "hasta".
-    const finPractica = p.fechaFin || p.fecha;
-    if (fDesde && finPractica < fDesde) return false;
-    if (fHasta && p.fecha > fHasta) return false;
-    return true;
-  });
-
-  acumuladosPracticas = acumPorAlumno;
+async function cargarPracticas(move=0) {
+  const alumnoId=chosenStudent('f-alumno');
+  const spec=pageSpec('practicas',{equal:{alumnoId,tipo:valueOf('f-tipo'),lugar:valueOf('f-lugar'),tutorResponsable:valueOf('f-tutor'),sector:valueOf('f-sector')},from:valueOf('f-desde'),to:valueOf('f-hasta')});
+  const page=await recordsPage('tabla-practicas',spec,move,cargarPracticas);if(!page)return;
+  const raw=page.docs.map(rowData).filter(p=>!p.archivada);
+  const mapa=await relatedStudents(raw);
+  const practicas=raw.map(p=>({...calculatePractice(p,[],raw),alumno:mapa[p.alumnoId]}));
+  const acumPorAlumno={};acumuladosPracticas={};
   ultimasPracticasFiltradas = practicas;
 
   const chkTodas = document.getElementById("chk-todas-practicas");
@@ -713,7 +750,7 @@ async function cargarPracticas() {
     const horasPorDia = dayHours(p);
     const diasPorSemana = p.diasPorSemana ?? 5;
     return `
-    <tr class="tipo-${p.tipo || "interna"}">
+    <tr data-practica="${p.id}" class="tipo-${p.tipo || "interna"}">
       <td><input type="checkbox" class="chk-practica" value="${p.id}"></td>
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
       <td>${p.lugar}</td>
@@ -733,13 +770,13 @@ async function cargarPracticas() {
       </td>
       <td>
         ${pendiente
-          ? `<span title="Calculado solo a partir de horas x día, días/sem y el rango de fechas">${horasCumplidas(p).toFixed(2)} / ${num(p.horasPlanificadas).toFixed(2)}${p.jornadasPendientes || p.conflictosAsistencia ? " · revisar jornadas" : ""}</span>`
+          ? `<span data-horas-practica><button class="btn btn-sm btn-outline-secondary" onclick="window.consultarHorasPractica('${p.id}','${p.alumnoId}')">Consultar horas</button> / ${num(p.horasPlanificadas).toFixed(2)} planificadas</span>`
           : `<input type="number" step="0.5" min="0" class="form-control form-control-sm" style="width:90px"
               value="${numeroHoras(p.horasTotales)}" title="Horas totales reales de esta práctica"
               onchange="window.actualizarHorasTotalesReal('${p.id}', this.value)">`}
       </td>
-      <td>${acum.horasRealizadas.toFixed(1)}</td>
-      <td>${acum.totalHoras.toFixed(1)}</td>
+      <td data-acum-real>Consultar</td>
+      <td data-acum-total>Consultar</td>
       <td>${p.tutorResponsable || ""}</td><td>${p.contacto || ""}</td>
       <td><button class="btn btn-sm btn-outline-secondary" onclick="window.editarPractica('${p.id}')">Editar</button></td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="window.eliminarPractica('${p.id}')">Eliminar</button></td>
@@ -801,7 +838,8 @@ document.getElementById("btn-eliminar-practicas-masivo")?.addEventListener("clic
   cargarPracticas();
 });
 
-document.getElementById("btn-exportar-practicas")?.addEventListener("click", () => {
+document.getElementById("btn-exportar-practicas")?.addEventListener("click", async () => {
+  for(const id of [...new Set(ultimasPracticasFiltradas.map(p=>p.alumnoId))]){const first=ultimasPracticasFiltradas.find(p=>p.alumnoId===id);if(await window.consultarHorasPractica(first.id,id)===false)return;}
   if (!ultimasPracticasFiltradas.length) { mostrarAlerta("No hay prácticas para exportar.", "warning"); return; }
   const encabezados = ["Fecha inicio", "Fecha fin", "Alumno", "Legajo", "Lugar", "Tipo", "Estado", "Sector",
     "Hora entrada", "Hora salida", "Horas x día", "Días por semana", "Horas cumplidas (práctica)", "Horas planificadas (práctica)",
@@ -820,7 +858,7 @@ document.getElementById("btn-exportar-practicas")?.addEventListener("click", () 
 
 document.getElementById("btn-filtrar-practicas").addEventListener("click", cargarPracticas);
 document.getElementById("btn-limpiar-practicas").addEventListener("click", () => {
-  ["f-alumno", "f-lugar", "f-tutor", "f-sector", "f-desde", "f-hasta"].forEach(id => document.getElementById(id).value = "");
+  ["f-alumno", "f-lugar", "f-tutor", "f-sector", "f-desde", "f-hasta","f-tipo"].forEach(id => document.getElementById(id).value = "");
   cargarPracticas();
 });
 
@@ -860,8 +898,7 @@ document.getElementById("btn-nueva-practica").addEventListener("click", async ()
 });
 
 window.editarPractica = async (id, desdeFicha = false) => {
-  const practicas = await obtenerPracticas();
-  const p = practicas.find(x => x.id === id);
+  const p = await registroPorId("practicas",id);if(!p)return;
   practicaOrigenAlumnoId = desdeFicha ? p.alumnoId : null;
   if (desdeFicha) cerrarModal("modal-alumno");
   document.getElementById("practica-alumno-buscar").value = "";
@@ -951,7 +988,7 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
       datos.avisoAutomaticoEnviado = false;
       avisosEnviadosSesion.delete(id);
     }
-    await updateDoc(doc(db, "practicas", id), datos);
+    await guardarPracticaConInformes(id,datos,anterior.exists()?anterior.data():null);
   } else {
     const grupoId = `grupo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await Promise.all(alumnosSeleccionados.map(alumnoId => addDoc(collection(db, "practicas"), { ...datos, alumnoId, grupoId })));
@@ -959,7 +996,7 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
   await registrarLugarSiNuevo(datos.lugar).catch(()=>mostrarAlerta("La práctica se guardó, pero no se pudo actualizar el catálogo de lugares.","warning"));
   cerrarModal("modal-practica");
   mostrarAlerta("Fecha de práctica guardada.");
-  await sincronizarAsistenciasAutomaticas();
+  await sincronizarAsistenciasAutomaticas(true,alumnosSeleccionados);
   // Si se editó/creó desde la ficha de un alumno, hay que refrescar esa lista
   // (y no la de "Fechas de práctica") para que el cambio se vea reflejado ahí.
   if (practicaOrigenAlumnoId) {
@@ -995,22 +1032,23 @@ async function llenarSelectPracticaDeInforme(alumnoId, seleccionadaId = "") {
     sel.innerHTML = `<option value="">Seleccionar práctica realizada</option>`;
     return;
   }
-  const practicas = await obtenerPracticas();
-  const propias = practicas.filter(p => p.alumnoId === alumnoId && practicaRealizada(p));
+  const practicas = await practicasAlumno(alumnoId);
+  const propias = practicas.filter(p => practicaRealizada(p));
   sel.innerHTML = `<option value="">Seleccionar práctica realizada</option>` +
     propias.map(p => `<option value="${p.id}" ${p.id === seleccionadaId ? "selected" : ""}>${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
 }
 document.getElementById("informe-alumno").addEventListener("change", (e) => llenarSelectPracticaDeInforme(e.target.value));
 
-async function cargarInformes() {
-  const [alumnos, practicas] = await Promise.all([obtenerAlumnos(), obtenerPracticas()]);
+async function cargarCumplimientoInformes() {
+  const selected=chosenStudent("if-alumno");
+  const [alumnos, practicas] = await Promise.all([selected?registroPorId("alumnos",selected).then(a=>a?[a]:[]):obtenerAlumnos(), selected?practicasAlumno(selected):obtenerPracticas()]);
   const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
   const mapaPracticas = Object.fromEntries(practicas.map(p => [p.id, p]));
 
-  const snap = await getDocs(query(collection(db, "informes"), orderBy("fechaPresentacion", "desc")));
+  const snap = await getDocs(selected?query(collection(db,"informes"),where("alumnoId","==",selected)):collection(db,"informes"));
   const todosInformes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const fAlumno = document.getElementById("if-alumno").value.trim().toLowerCase();
+  const fAlumno = "";
   const fLugar = document.getElementById("if-lugar").value.trim().toLowerCase();
   const fTitulo = document.getElementById("if-titulo").value.trim().toLowerCase();
   const fEstado = document.getElementById("if-estado").value;
@@ -1045,27 +1083,15 @@ async function cargarInformes() {
       </tr>`;
     }).join("") || `<tr><td colspan="5" class="text-muted">No hay prácticas realizadas para los filtros seleccionados.</td></tr>`;
 
-  const informes = todosInformes.filter(i => {
-    const alumno = mapaAlumnos[i.alumnoId];
-    const practica = i.practicaId ? mapaPracticas[i.practicaId] : null;
-    if (fAlumno && !(alumno && `${nombreCompleto(alumno)} ${alumno.legajo}`.toLowerCase().includes(fAlumno))) return false;
-    if (fLugar && !(practica?.lugar || "").toLowerCase().includes(fLugar)) return false;
-    if (fTitulo && !(i.titulo || "").toLowerCase().includes(fTitulo)) return false;
-    if (fEstado && i.estado !== fEstado) return false;
-    return true;
-  });
-
-  document.getElementById("tabla-informes").innerHTML = informes.map(i => {
-    const practica = i.practicaId ? mapaPracticas[i.practicaId] : null;
-    return `
-    <tr>
-      <td>${mapaAlumnos[i.alumnoId] ? nombreCompleto(mapaAlumnos[i.alumnoId]) : "-"}</td>
-      <td>${i.titulo}</td><td>${fmtFecha(i.fechaPresentacion)}</td>
-      <td><span class="badge badge-estado-${i.estado}">${i.estado}</span></td>
-      <td>${practica ? `${practica.lugar} (${fmtRangoFechas(practica)})` : "-"}</td>
-      <td>${i.enlaceDrive ? `<a href="${i.enlaceDrive}" target="_blank">Ver archivo</a>` : ""}</td>
-    </tr>`;
-  }).join("") || `<tr><td colspan="6" class="text-muted">No se encontraron informes.</td></tr>`;
+ }
+async function cargarInformes(move=0){
+ document.getElementById("tabla-cumplimiento-informes").innerHTML='<tr><td colspan="5">Usá Calcular cumplimiento para consultar el historial completo de los alumnos filtrados.</td></tr>';
+ const spec=pageSpec('informes',{equal:{alumnoId:chosenStudent('if-alumno'),lugar:valueOf('if-lugar'),estado:valueOf('if-estado')},prefix:valueOf('if-titulo'),searchField:'busqueda_titulo'});
+ const page=await recordsPage('tabla-informes',spec,move,cargarInformes);if(!page)return;
+ const informes=page.docs.map(rowData),mapaAlumnos=await relatedStudents(informes);
+ const practiceIds=[...new Set(informes.map(i=>i.practicaId).filter(Boolean))];
+ const related=await Promise.all(practiceIds.map(id=>registroPorId('practicas',id))),mapaPracticas=Object.fromEntries(related.filter(Boolean).map(p=>[p.id,p]));
+ document.getElementById('tabla-informes').innerHTML=informes.map(i=>{const p=mapaPracticas[i.practicaId];return `<tr><td>${escaparHTML(mapaAlumnos[i.alumnoId]?nombreCompleto(mapaAlumnos[i.alumnoId]):'—')}</td><td>${escaparHTML(i.titulo)}</td><td>${fmtFecha(i.fechaPresentacion)}</td><td>${escaparHTML(i.estado)}</td><td>${p?escaparHTML(p.lugar)+' ('+fmtRangoFechas(p)+')':'—'}</td><td>${i.enlaceDrive?`<a href="${escaparHTML(i.enlaceDrive)}" target="_blank">Ver archivo</a>`:''}</td></tr>`;}).join('')||'<tr><td colspan="6">No hay informes en esta página.</td></tr>';
 }
 
 document.getElementById("btn-filtrar-informes").addEventListener("click", cargarInformes);
@@ -1093,6 +1119,7 @@ document.getElementById("form-informe").addEventListener("submit", async (e) => 
     enlaceDrive: document.getElementById("informe-enlace").value.trim(),
     observaciones: document.getElementById("informe-obs").value.trim(),
   };
+  if(datos.practicaId){const p=await registroPorId("practicas",datos.practicaId);datos.lugar=p?.lugar||"";}
   await addDoc(collection(db, "informes"), datos);
   cerrarModal("modal-informe");
   mostrarAlerta("Informe registrado.");
@@ -1438,8 +1465,7 @@ document.getElementById("tabla-registrar-informes-drive").addEventListener("chan
   if (!e.target.classList.contains("sel-alumno-registrar")) return;
   const idx = e.target.dataset.idx;
   const alumnoId = e.target.value;
-  const practicas = await obtenerPracticas();
-  const practicasDelAlumno = alumnoId ? practicas.filter(p => p.alumnoId === alumnoId) : [];
+  const practicasDelAlumno = alumnoId ? await practicasAlumno(alumnoId) : [];
   const selPractica = document.querySelector(`.sel-practica-registrar[data-idx="${idx}"]`);
   if (selPractica) {
     selPractica.innerHTML = `<option value="">Sin vincular</option>` +
@@ -1466,7 +1492,7 @@ document.getElementById("btn-guardar-informes-drive").addEventListener("click", 
 
     try {
       await addDoc(collection(db, "informes"), {
-        alumnoId, practicaId, titulo, fechaPresentacion, estado,
+        alumnoId, practicaId, titulo, fechaPresentacion, estado,lugar:practicaId?(await registroPorId("practicas",practicaId))?.lugar||"":"",
         enlaceDrive: fila.archivo.webViewLink,
         observaciones: "Registrado desde Buscar en Drive",
       });
@@ -1489,19 +1515,11 @@ document.getElementById("btn-guardar-informes-drive").addEventListener("click", 
 });
 
 // --------------------------------------------------------------- FALTAS -
-async function cargarFaltas() {
-  const alumnos = await obtenerAlumnos();
-  const selFiltro = document.getElementById("falta-filtro-alumno");
-  if (selFiltro.options.length <= 1) {
-    selFiltro.innerHTML += alumnos.map(a => `<option value="${a.id}">${nombreCompleto(a)}</option>`).join("");
-  }
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-  const snap = await getDocs(query(collection(db, "faltas"), orderBy("fecha", "desc")));
-  let faltas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-  const filtroId = selFiltro.value;
-  if (filtroId) faltas = faltas.filter(f => f.alumnoId === filtroId);
-
+async function cargarFaltas(move=0) {
+  const spec=pageSpec('faltas',{equal:{alumnoId:valueOf('falta-filtro-alumno')}});
+  const page=await recordsPage('tabla-faltas',spec,move,cargarFaltas);if(!page)return;
+  const faltas=page.docs.map(rowData),mapaAlumnos=await relatedStudents(faltas);
+  addStudentOptions('falta-filtro-alumno',Object.values(mapaAlumnos));
   const chkTodas = document.getElementById("chk-todas-faltas");
   if (chkTodas) chkTodas.checked = false;
 
@@ -1555,37 +1573,24 @@ document.getElementById("form-falta").addEventListener("submit", async (e) => {
 });
 
 // ---------------------------------------------------------- ASISTENCIA --
-let sincronizacionEnCurso=null;
-async function sincronizarAsistenciasAutomaticas() {
+let sincronizacionEnCurso=null,ultimaSincronizacion=0;
+async function sincronizarAsistenciasAutomaticas(forzar=false,alumnoIds=null) {
  if(!["admin","tutor"].includes(usuarioActual?.rol))return 0;
  if(sincronizacionEnCurso)return sincronizacionEnCurso;
+ if(!forzar&&ultimaSincronizacion&&Date.now()-ultimaSincronizacion<300000)return 0;
  sincronizacionEnCurso=(async()=>{
-  const [practices,records]=await Promise.all([lecturaPracticas(),lecturaAsistencias()]);
-  return synchronizeAttendance({db,api:{doc,runTransaction},practices,records});
+  const [practices,records]=await Promise.all(alumnoIds?[readForStudents("practicas",alumnoIds),readForStudents("asistencias",alumnoIds)]:[lecturaPracticas(),lecturaAsistencias()]);
+  return synchronizeAttendance({db,api:{doc,runTransaction},practices,records,onPending:()=>mostrarAlerta("Quedan jornadas pendientes de sincronizar. Se procesan hasta 30 por revisión; volvé a Asistencia después de cinco minutos. Apps Script también procesa jornadas recientes.","info")});
  })();
- try{return await sincronizacionEnCurso;}finally{sincronizacionEnCurso=null;}
+ try{const n=await sincronizacionEnCurso;ultimaSincronizacion=Date.now();return n;}finally{sincronizacionEnCurso=null;}
 }
 
-async function cargarAsistencia() {
-  await sincronizarAsistenciasAutomaticas();
-  await actualizarSelectorJornadas();
-  const alumnos = await obtenerAlumnos();
-  const selForm = document.getElementById("asist-alumno");
-  const selFiltro = document.getElementById("asist-filtro-alumno");
-  if (selForm.options.length === 0) selForm.innerHTML = alumnos.map(a => `<option value="${a.id}">${nombreCompleto(a)}</option>`).join("");
-  if (selFiltro.options.length <= 1) selFiltro.innerHTML += alumnos.map(a => `<option value="${a.id}">${nombreCompleto(a)}</option>`).join("");
-
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-  const snap = await getDocs(query(collection(db, "asistencias"), orderBy("fecha", "desc")));
-  let registros = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r=>!r.duplicadaEn&&!r.suprimido&&!r.fueraCronograma);
-
-  const filtroId = selFiltro.value;
-  if (filtroId) registros = registros.filter(r => r.alumnoId === filtroId);
-  const filtroFecha = document.getElementById("asist-filtro-fecha").value;
-  const filtroLugar = document.getElementById("asist-filtro-lugar").value.trim().toLowerCase();
-  if (filtroFecha) registros = registros.filter(r => r.fecha === filtroFecha);
-  if (filtroLugar) registros = registros.filter(r => String(r.lugar || "").toLowerCase().includes(filtroLugar));
-
+async function cargarAsistencia(move=0) {
+  const spec=attendanceSpec();
+  const page=await recordsPage('tabla-asistencia',spec,move,cargarAsistencia);if(!page)return;
+  const registros=page.docs.map(rowData).filter(r=>!r.duplicadaEn&&!r.suprimido&&!r.fueraCronograma);
+  const mapaAlumnos=await relatedStudents(registros);
+  addStudentOptions('asist-filtro-alumno',Object.values(mapaAlumnos));
   const chkTodas = document.getElementById("chk-todas-asistencia");
   if (chkTodas) chkTodas.checked = false;
 
@@ -1605,7 +1610,7 @@ async function cargarAsistencia() {
 window.actualizarEstadoAsistencia = async (id, estado) => {
   if (!ESTADOS_ASISTENCIA[estado]) return;
   const snap=await getDoc(doc(db,"asistencias",id));if(!snap.exists())return;
-  const data={...snap.data(),estado};const p=(await lecturaPracticas()).find(p=>p.id===data.practicaId);
+  const data={...snap.data(),estado};const p=await registroPorId("practicas",data.practicaId);
   try{validateAttendance(data,p);}catch(err){mostrarAlerta(err.message,"warning");await cargarAsistencia();return;}
   await updateDoc(doc(db, "asistencias", id), { estado, presente: ["presente", "tardanza"].includes(estado), editado: new Date().toISOString(), confirmado:true, origen:"manual", conflicto:false });
   mostrarAlerta("Estado de asistencia actualizado.");
@@ -1633,11 +1638,12 @@ document.getElementById("btn-eliminar-asistencia-masivo")?.addEventListener("cli
 
 document.getElementById("asist-filtro-alumno").addEventListener("change", cargarAsistencia);
 document.getElementById("asist-filtro-fecha").addEventListener("change", cargarAsistencia);
-document.getElementById("asist-filtro-lugar").addEventListener("input", cargarAsistencia);
+document.getElementById("asist-filtro-lugar").addEventListener("input", delayed(cargarAsistencia));
 document.getElementById("btn-limpiar-asistencia").addEventListener("click", () => {
   document.getElementById("asist-filtro-alumno").value = "";
   document.getElementById("asist-filtro-fecha").value = "";
   document.getElementById("asist-filtro-lugar").value = "";
+  ["asist-filtro-desde","asist-filtro-hasta","asist-filtro-tipo","asist-filtro-estado"].forEach(id=>document.getElementById(id).value="");
   cargarAsistencia();
 });
 
@@ -1646,7 +1652,7 @@ document.getElementById("btn-limpiar-asistencia").addEventListener("click", () =
 async function actualizarSelectorJornadas() {
  const sel=document.getElementById("asist-practica");if(!sel)return;
  const id=document.getElementById("asist-alumno").value,date=document.getElementById("asist-fecha").value;
- const choices=(await obtenerPracticas()).filter(p=>p.alumnoId===id&&estadoPractica(p)!=="cancelada"&&(!date||datesFor(p).includes(date)));
+ const choices=(id?(await getDocs(query(collection(db,"practicas"),where("alumnoId","==",id)))).docs.map(rowData):[]).filter(p=>p.alumnoId===id&&estadoPractica(p)!=="cancelada"&&(!date||datesFor(p).includes(date)));
  const previous=sel.value;sel.innerHTML='<option value="">Seleccionar práctica</option>'+choices.map(p=>`<option value="${escaparHTML(p.id)}">${escaparHTML(p.lugar)} · ${escaparHTML(p.sector)} · ${fmtRangoFechas(p)} · ${p.horaInicio||""}</option>`).join('');
  if(choices.some(p=>p.id===previous))sel.value=previous;else if(choices.length===1)sel.value=choices[0].id;
  return choices;
@@ -1666,7 +1672,7 @@ document.getElementById("form-asistencia").addEventListener("submit", async (e) 
   const fecha = document.getElementById("asist-fecha").value;
   const estado = document.getElementById("asist-estado").value;
   const practicaId=document.getElementById("asist-practica").value;
-  const practica=(await lecturaPracticas()).find(p=>p.id===practicaId);
+  const practica=await registroPorId("practicas",practicaId);
   const datos = {
     practicaId, alumnoId, fecha,
     lugar,
@@ -1737,20 +1743,13 @@ document.getElementById("btn-notif-guardar-config").addEventListener("click", as
 // Refresca la tabla de "próximas" y el historial usando el valor de "días de
 // aviso" que esté tipeado en este momento (no hace falta guardar para probar
 // distintos rangos).
-async function renderProximasYHistorial() {
+async function renderProximasYHistorial(move=0) {
   const dias = parseInt(document.getElementById("notif-dias").value || "3", 10);
-  const alumnos = await obtenerAlumnos();
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-
-  const hoy = hoyISO();
-  const limite = sumarDiasISO(hoy, dias);
-
-  const snap = await getDocs(collection(db, "practicas"));
-  const proximas = snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(p => p.fecha >= hoy && p.fecha <= limite && ["programada", "en_curso"].includes(estadoPractica(p)) && !p.avisoAutomaticoEnviado)
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
-
+  const hoy=hoyISO(),hasta=sumarDiasISO(hoy,dias);
+  const spec=pageSpec('practicas',{from:'',to:hasta,direction:'asc'});spec.filters.push(['fecha','>=',hoy]);
+  const page=await recordsPage('tabla-notif-proximas',spec,move,renderProximasYHistorial);if(!page)return;
+  const proximas=page.docs.map(rowData).filter(p=>!p.archivada&&['programada','en_curso'].includes(calendarState(p))&&!p.avisoAutomaticoEnviado);
+  const mapaAlumnos=await relatedStudents(proximas);
   document.getElementById("tabla-notif-proximas").innerHTML = proximas.map(p => `
     <tr>
       <td><input type="checkbox" class="chk-notif-practica" value="${p.id}" checked></td>
@@ -1763,7 +1762,7 @@ async function renderProximasYHistorial() {
 
   document.getElementById("btn-notif-enviar").dataset.proximas = JSON.stringify(proximas);
 
-  const histSnap = await getDocs(query(collection(db, "notificaciones_log"), orderBy("fechaEnvio", "desc"), limit(30)));
+  const histSnap = await getDocs(query(collection(db, "notificaciones_log"), orderBy("fechaEnvio", "desc"), limit(20)));
   const historial = histSnap.docs.map(d => d.data()).slice(0, 30);
   document.getElementById("tabla-notif-historial").innerHTML = historial.map(h => `
     <tr>
@@ -1775,7 +1774,7 @@ async function renderProximasYHistorial() {
     </tr>`).join("") || `<tr><td colspan="5" class="text-muted">Sin envíos todavía.</td></tr>`;
 }
 
-document.getElementById("notif-dias").addEventListener("input", renderProximasYHistorial);
+document.getElementById("notif-dias").addEventListener("input", delayed(renderProximasYHistorial));
 document.getElementById("chk-todas-notificaciones").addEventListener("change", e => {
   document.querySelectorAll(".chk-notif-practica").forEach(x=>x.checked=e.target.checked);
 });
@@ -1829,7 +1828,7 @@ async function renderSolicitudes(){
  const config=await obtenerConfigNotificaciones(),heartbeat=document.getElementById("notif-ultimo-control");
  if(heartbeat)heartbeat.textContent=config.ultimoControl?`Último control: ${config.ultimoControl.fecha}, ${config.ultimoControl.estado}. Cuota disponible: ${config.ultimoControl.cuotaDisponible??"sin dato"}. ${config.ultimoControl.detalle||""}`:"Apps Script todavía no registró una ejecución. Seguí CONFIGURACION_GRATUITA.md.";
 }
-document.getElementById("btn-notif-actualizar")?.addEventListener("click",async()=>{await renderSolicitudes();await renderProximasYHistorial();if(solicitudVisible)await mostrarSolicitud(solicitudVisible);});
+document.getElementById("btn-notif-actualizar")?.addEventListener("click",async()=>{firestoreAccess.clear();await renderSolicitudes();await renderProximasYHistorial();if(solicitudVisible)await mostrarSolicitud(solicitudVisible);});
 // Los avisos automáticos los procesa Apps Script, independientemente del inicio de sesión.
 async function revisarYEnviarNotificacionesAutomaticas() {
  // El trabajador programado es el único emisor automático. No enviar desde el login.
@@ -1940,7 +1939,7 @@ document.getElementById("btn-generar-pdf").addEventListener("click", async () =>
         getDocs(query(collection(db,"informes"),where("alumnoId","==",alumnoId))),
       ]);
       if (!snapA.exists()) return null;
-      return { a:{id:snapA.id,...snapA.data()}, propias:await enriquecerPracticas(practicas.docs.map(d=>({id:d.id,...d.data()}))), asist:snapAsist.docs.map(d=>d.data()).filter(r=>!r.duplicadaEn&&!r.suprimido&&!r.fueraCronograma), informes:snapInformes.docs.map(d=>d.data()) };
+      return { a:{id:snapA.id,...snapA.data()}, propias:await enriquecerPracticas(practicas.docs.map(d=>({id:d.id,...d.data()})),snapAsist.docs.map(rowData)), asist:snapAsist.docs.map(d=>d.data()).filter(r=>!r.duplicadaEn&&!r.suprimido&&!r.fueraCronograma), informes:snapInformes.docs.map(d=>d.data()) };
     }));
     const validos = datosAlumnos.filter(Boolean);
     if (!validos.length) throw new Error("No se encontraron los alumnos seleccionados.");
@@ -1978,16 +1977,15 @@ document.getElementById("btn-generar-pdf").addEventListener("click", async () =>
 });
 
 // ------------------------------------------------------------- USUARIOS -
-async function cargarUsuarios() {
-  const [snap, alumnos] = await Promise.all([getDocs(collection(db, "usuarios")), obtenerAlumnos()]);
-  const usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
-  document.getElementById("usuarios-count").textContent = usuarios.length;
+async function cargarUsuarios(move=0) {
+  const spec=pageSpec('usuarios',{equal:{rol:valueOf('usuarios-filtro-rol')},prefix:valueOf('usuarios-filtro-texto'),searchField:'busqueda_nombre',direction:'asc'});
+  const page=await recordsPage('tabla-usuarios',spec,move,cargarUsuarios);if(!page)return;
+  const usuarios=page.docs.map(rowData),mapaAlumnos=await relatedStudents(usuarios);
+  document.getElementById('usuarios-count').textContent=`${usuarios.length} en esta página`;
   document.getElementById("tabla-usuarios").innerHTML = usuarios.map(u => `
     <tr><td>${escaparHTML(u.nombre)}</td><td>${escaparHTML(u.email)}</td><td>${escaparHTML(u.rol)}</td><td>${u.alumnoId && mapaAlumnos[u.alumnoId] ? escaparHTML(nombreCompleto(mapaAlumnos[u.alumnoId])) : "-"}</td></tr>
   `).join("") || `<tr><td colspan="4" class="text-muted">No hay perfiles cargados todavía.</td></tr>`;
-  const selAlumno = document.getElementById("usuario-alumno-id");
-  selAlumno.innerHTML = `<option value="">Seleccionar alumno</option>` + alumnos.map(a => `<option value="${a.id}">${escaparHTML(nombreCompleto(a))} (${escaparHTML(a.legajo)})</option>`).join("");
+  addStudentOptions("usuario-alumno-id",Object.values(mapaAlumnos));
 }
 
 document.getElementById("usuario-rol").addEventListener("change", (e) => document.getElementById("usuario-alumno-wrap").classList.toggle("d-none", e.target.value !== "alumno"));
@@ -2011,7 +2009,7 @@ document.getElementById("form-usuario").addEventListener("submit", async (e) => 
 });
 
 // ------------------------------------------------------------ DASHBOARD -
-async function cargarDashboard() {
+async function cargarDashboardCompleto() {
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = await enriquecerPracticas(snap.docs.map(d=>({id:d.id,...d.data()})));
@@ -2033,7 +2031,7 @@ async function cargarDashboard() {
   const hoy = hoyISO();
   const mapaAlumnos = Object.fromEntries(alumnos.map(a => [a.id, a]));
   const proximas = practicas
-    .map((p, idx) => ({ ...p, id: snap.docs[idx].id }))
+    .map(p => p)
     .filter(p => p.fecha > hoy && estadoPractica(p) === "programada")
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
     .slice(0, 5);
@@ -2042,13 +2040,24 @@ async function cargarDashboard() {
   `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas próximas.</td></tr>`;
 
   const enCurso = practicas
-    .map((p, idx) => ({ ...p, id: snap.docs[idx].id }))
+    .map(p => p)
     .filter(p => estadoPractica(p) === "en_curso")
     .sort((a, b) => String(a.lugar || "").localeCompare(String(b.lugar || "")));
   document.getElementById("tabla-en-curso").innerHTML = enCurso.map(p => `
     <tr><td>${fmtRangoFechas(p)}</td><td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td><td>${escaparHTML(p.lugar)}</td></tr>
   `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas en curso hoy.</td></tr>`;
   await aplicarConfigDashboard();
+}
+
+async function cargarDashboard(){
+ for(const id of ['stat-horas','stat-alumnos','stat-practicas'])document.getElementById(id).textContent='Consultar';
+ document.getElementById('tabla-horas-sector').innerHTML='<tr><td colspan="2">Usá Calcular indicadores para consultar las horas del historial completo.</td></tr>';
+ const hoy=hoyISO();
+ const [future,current]=await Promise.all([getDocs(query(collection(db,'practicas'),where('fecha','>',hoy),orderBy('fecha','asc'),limit(5))),getDocs(query(collection(db,'practicas'),where('fechaFin','>=',hoy),where('fecha','<=',hoy),orderBy('fechaFin','asc'),orderBy('fecha','asc'),limit(20)))]);
+ const proximas=future.docs.map(rowData).filter(p=>!p.archivada&&calendarState(p)==='programada'),enCurso=current.docs.map(rowData).filter(p=>!p.archivada&&calendarState(p)==='en_curso');
+ const mapa=await relatedStudents([...proximas,...enCurso]);
+ for(const [id,rows] of [['tabla-proximas',proximas],['tabla-en-curso',enCurso]])document.getElementById(id).innerHTML=rows.map(p=>`<tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(mapa[p.alumnoId]?nombreCompleto(mapa[p.alumnoId]):'—')}</td><td>${escaparHTML(p.lugar)}</td></tr>`).join('')||'<tr><td colspan="3">No hay prácticas en esta consulta.</td></tr>';
+ await aplicarConfigDashboard();
 }
 
 // --------------------------------------------------------- ESTADISTICAS -
@@ -2959,7 +2968,7 @@ document.getElementById("btn-exportar-ficha").addEventListener("click", e => acc
   const id = document.getElementById("alumno-id").value;
   if (!id) { mostrarAlerta("Primero guardá el alumno.", "warning"); return; }
   const [alumnos, practicas, asistencias, faltas, informes] = await Promise.all([
-    obtenerAlumnos(true), obtenerPracticas(),
+    registroPorId("alumnos",id).then(a=>a?[a]:[]), practicasAlumno(id),
     getDocs(query(collection(db, "asistencias"), where("alumnoId", "==", id))),
     getDocs(query(collection(db, "faltas"), where("alumnoId", "==", id))),
     getDocs(query(collection(db, "informes"), where("alumnoId", "==", id))),
@@ -2983,8 +2992,9 @@ document.getElementById("btn-exportar-ficha").addEventListener("click", e => acc
 for (const [boton, coleccion, filtro] of [["btn-exportar-asistencias", "asistencias", "asist-filtro-alumno"], ["btn-exportar-faltas", "faltas", "falta-filtro-alumno"]]) {
   document.getElementById(boton).addEventListener("click", e => accionExportar(e.currentTarget, async () => {
     const id = document.getElementById(filtro).value;
-    const [alumnos, snap] = await Promise.all([obtenerAlumnos(), getDocs(id ? query(collection(db, coleccion), where("alumnoId", "==", id)) : collection(db, coleccion))]);
-    const mapa = Object.fromEntries(alumnos.map(a => [a.id, a]));
+    const spec=coleccion==="asistencias"?attendanceSpec():pageSpec("faltas",{equal:{alumnoId:id}});
+    const snap=await getDocs(queryFor(spec));
+    const mapa=await relatedStudents(snap.docs.map(rowData));
     const filas = snap.docs.map(d => d.data()).filter(r=>coleccion!=="asistencias"||(!r.duplicadaEn&&!r.suprimido&&!r.fueraCronograma)).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
     const asistencia = coleccion === "asistencias";
     exportarXLSX(`${coleccion}_${hoyISO()}.xlsx`, asistencia ? "Asistencias" : "Faltas",
@@ -2997,7 +3007,7 @@ document.getElementById("asist-practica")?.addEventListener("change",autocomplet
 window.actualizarHorarioAsistencia=async(id,campo,value)=>{
  if(!["horaEntrada","horaSalida"].includes(campo))return;
  const snap=await getDoc(doc(db,"asistencias",id));if(!snap.exists())return;
- const data={...snap.data(),[campo]:value};const p=(await lecturaPracticas()).find(p=>p.id===data.practicaId);
+ const data={...snap.data(),[campo]:value};const p=await registroPorId("practicas",data.practicaId);
  try{validateAttendance(data,p);await updateDoc(snap.ref,{[campo]:value,origen:"manual",confirmado:true,editado:new Date().toISOString()});await cargarAsistencia();}
  catch(err){mostrarAlerta(err.message,"warning");}
 };
@@ -3031,3 +3041,33 @@ window.reprogramarJornada=async id=>{
   mostrarAlerta("Jornada reprogramada: el día original no suma horas; la nueva fecha tiene su propio registro.");await cargarAsistencia();
  }catch(err){mostrarAlerta(err.message,"warning");}
 };
+const preparationCursors=new Map();
+async function prepareSearchPage(){
+ if(usuarioActual?.rol!=='admin')throw new Error('Se requiere administrador.');
+ const name=valueOf('busqueda-preparar-coleccion'),cursor=preparationCursors.get(name),spec={collection:name,filters:[],order:[['__name__','asc']]};
+ const docs=(await getDocs(queryFor(spec,cursor,20))).docs;
+ const batch=writeBatch(db);let changed=0;
+ for(const snap of docs){const data=snap.data(),extra=searchableFields(name,name==='practicas'?{...data,fechaFin:data.fechaFin||data.fecha||''}:data);
+  if(name==='asistencias'){if(!data.estado)extra.estado=attendanceState(data);if(!data.tipo&&data.practicaId){const p=await registroPorId('practicas',data.practicaId);if(p)extra.tipo=p.tipo||'interna';}}
+  if(name==='informes'&&data.practicaId){const p=await registroPorId('practicas',data.practicaId);if(p)extra.lugar=p.lugar||'';}
+  if(Object.entries(extra).some(([k,v])=>data[k]!==v)){batch.update(snap.ref,extra);changed++;}
+ }
+ if(changed)await batch.commit();
+ if(docs.length)preparationCursors.set(name,docs.at(-1));
+ if(docs.length<20)await setDoc(doc(db,'configuracion','lecturas'),{[name+'Preparadas']:true,actualizado:new Date().toISOString()},{merge:true});
+ document.getElementById('busqueda-progreso').textContent=`${docs.length} revisados, ${changed} preparados. ${docs.length===20?'Continuá con próximos 20.':'Terminó esta colección.'}`;
+}
+function actionButton(id,fn){document.getElementById(id)?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;try{await fn();}catch(err){mostrarAlerta(firestoreMessage(err),'danger');}finally{button.disabled=false;}});}
+function initializeRemoteLists(){
+ for(const id of ['f-lugar','if-lugar','asist-filtro-lugar']){const input=document.getElementById(id);input?.setAttribute('list','lugares-list');input?.addEventListener('focus',async()=>{try{await obtenerLugares();poblarDatalistLugares();}catch(err){mostrarAlerta(firestoreMessage(err),'warning');}});}
+ for(const id of ['f-alumno','if-alumno','asist-filtro-alumno','falta-filtro-alumno','asist-alumno','usuario-alumno-id'])attachStudentSearch(id);
+ document.getElementById('alumno-buscar-campo')?.addEventListener('change',()=>cargarAlumnos());
+ document.getElementById('usuarios-filtro-texto')?.addEventListener('input',delayed(cargarUsuarios));document.getElementById('usuarios-filtro-rol')?.addEventListener('change',()=>cargarUsuarios());
+ for(const id of ['asist-filtro-desde','asist-filtro-hasta','asist-filtro-tipo','asist-filtro-estado'])document.getElementById(id)?.addEventListener('change',()=>cargarAsistencia());
+ actionButton('btn-preparar-busqueda',prepareSearchPage);
+ actionButton('btn-calcular-dashboard',cargarDashboardCompleto);
+ actionButton('btn-calcular-cumplimiento',cargarCumplimientoInformes);
+ actionButton('btn-preparar-asistencia',async()=>{document.getElementById('form-asistencia').classList.remove('d-none');const docs=(await getDocs(query(collection(db,'alumnos'),orderBy(documentId()),limit(20)))).docs;addStudentOptions('asist-alumno',docs.map(rowData).filter(a=>!a.archivado));await actualizarSelectorJornadas();});
+ actionButton('btn-sincronizar-asistencia',async()=>{await sincronizarAsistenciasAutomaticas(true);await cargarAsistencia();});
+}
+initializeRemoteLists();

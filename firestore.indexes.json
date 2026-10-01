@@ -1,0 +1,2070 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "faltas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPresentacion",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "informes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "estado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_titulo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alumnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busqueda_curso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_apellido",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alumnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busqueda_curso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_nombre",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alumnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busqueda_curso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_legajo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alumnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busqueda_curso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_telefono",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alumnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "busqueda_curso",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_sector",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "usuarios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rol",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "busqueda_nombre",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "alumnoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lugar",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tutorResponsable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sector",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaFin",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "practicas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fechaFin",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fecha",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "practicas",
+      "fieldPath": "notas",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "asistencias",
+      "fieldPath": "observaciones",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "informes",
+      "fieldPath": "observaciones",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "informes",
+      "fieldPath": "enlaceDrive",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "notificaciones_solicitudes",
+      "fieldPath": "mensaje",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "notificaciones_solicitudes",
+      "fieldPath": "resultado",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "notificaciones_log",
+      "fieldPath": "detalle",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "configuracion",
+      "fieldPath": "ultimoControl",
+      "indexes": []
+    }
+  ]
+}

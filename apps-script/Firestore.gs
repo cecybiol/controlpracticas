@@ -34,7 +34,7 @@ function CPFirestore(projectId) {
  function get(path,transaction){return row(request(url(path)+(transaction?'?transaction='+encodeURIComponent(transaction):'')));}
  function list(collection,where,limit){
   const structuredQuery={from:[{collectionId:collection}]};
-  if(where)structuredQuery.where={fieldFilter:{field:{fieldPath:where[0]},op:where[1],value:encode(where[2])}};
+  if(where){const conditions=Array.isArray(where[0])?where:[where],filters=conditions.map(w=>({fieldFilter:{field:{fieldPath:w[0]},op:w[1],value:encode(w[2])}}));structuredQuery.where=filters.length===1?filters[0]:{compositeFilter:{op:'AND',filters}};if(conditions.length>1){const ranges=[...new Set(conditions.filter(w=>w[1]!=='EQUAL').map(w=>w[0]))];if(ranges.length)structuredQuery.orderBy=ranges.map(f=>({field:{fieldPath:f},direction:'ASCENDING'}));}}
   if(limit)structuredQuery.limit=limit;
   return (request(base+':runQuery','post',{structuredQuery})||[]).filter(x=>x.document).map(x=>row(x.document));
  }

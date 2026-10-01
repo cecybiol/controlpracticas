@@ -8,12 +8,15 @@ Seguir [CONFIGURACION_GRATUITA.md](CONFIGURACION_GRATUITA.md). Esta versión usa
 
 Las correcciones de asistencia, importación y horas se describen en [CORRECCIONES_Y_DESPLIEGUE.md](CORRECCIONES_Y_DESPLIEGUE.md).
 
+Para páginas de 20, filtros, índices y preparación del historial: [GUIA_CONSULTAS_EFICIENTES.md](GUIA_CONSULTAS_EFICIENTES.md). Para el error 429: [OPTIMIZACION_FIRESTORE.md](OPTIMIZACION_FIRESTORE.md).
+
 El sitio consulta Firestore con Firebase Authentication y reglas por rol. Los avisos se solicitan desde Avisos y se procesan aproximadamente cada hora en un script privado autorizado por un docente. Cada recordatorio adjunta el acuerdo PDF del alumno y práctica correspondiente. No se publica un endpoint de correo.
 
 ## Estructura
 
 - `index.html`, `css/`, `img/`, `js/`: sitio de GitHub Pages.
-- `firestore.rules`, `firebase.json`: permisos y emulador; sólo desplegar reglas.
+- `firestore.rules`, `firestore.indexes.json`, `firebase.json`: permisos, índices y emulador. Desplegar reglas e índices; esperar que estén habilitados.
+- `js/record-pages.mjs`: páginas de 20, cursores y búsquedas normalizadas.
 - `apps-script/`: copiar Code.gs, Firestore.gs, Domain.gs y el manifiesto a un proyecto privado de Apps Script.
 - `scripts/prepare-apps-script.mjs`: genera Domain.gs desde las reglas de negocio del sitio.
 - `tests/`: pruebas de horas, Apps Script, interfaz y reglas.
