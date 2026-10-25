@@ -1,4 +1,4 @@
-import {clock, datesFor, finished, attendanceId, attendanceMatches, chooseAttendance, manualHours, attendanceState} from './domain.mjs';
+import {clock, datesFor, finished, attendanceId, attendanceMatches, chooseAttendance, manualHours, attendanceState, jornadaOwner} from './domain.mjs';
 
 export async function synchronizeAttendance({db,api,practices,records,now=clock(),maxOperations=30,onPending=()=>{}}) {
   const {doc,runTransaction}=api;
@@ -8,6 +8,7 @@ export async function synchronizeAttendance({db,api,practices,records,now=clock(
     const dates=datesFor(p);
     for(const date of dates){
       if(!finished(date,p,now))continue;
+      if(jornadaOwner(p,date,practices,now).id!==p.id)continue;
       const id=attendanceId(p.id,date),ref=doc(db,'asistencias',id);
       const legacy=records.filter(r=>!r.duplicadaEn&&r.id!==id&&r.fecha===date&&attendanceMatches(r,p,practices));
       const ambiguous=records.some(r=>!r.practicaId&&!r.duplicadaEn&&r.fecha===date&&r.alumnoId===p.alumnoId&&r.lugar===p.lugar&&!attendanceMatches(r,p,practices));
@@ -66,4 +67,5 @@ export function validateAttendance(data,p,now=clock()){
   if(attendanceState(data)==='tardanza'&&(!data.horaEntrada||!data.horaSalida))throw new Error('La tardanza requiere entrada y salida reales.');
   if(data.horaEntrada&&data.horaSalida&&data.horaSalida<=data.horaEntrada)throw new Error('La salida debe ser posterior a la entrada.');
 }
+
 

@@ -63,7 +63,11 @@ export function attendanceMatches(r,p,practices=[]) {
   if(r.origen==='falta_legacy')return (!r.practicaId||r.practicaId===p.id)&&(!r.lugar||normalize(r.lugar)===normalize(p.lugar))&&datesFor(p).includes(r.fecha);
   if(r.practicaId)return r.practicaId===p.id;
   const candidates=practices.filter(x=>x.alumnoId===r.alumnoId && !x.archivada && normalize(x.lugar)===normalize(r.lugar) && (!r.tipo||normalize(x.tipo)===normalize(r.tipo)) && datesFor(x).includes(r.fecha));
-  return candidates.length===1 && candidates[0].id===p.id;
+  if(candidates.length===1)return candidates[0].id===p.id;
+  // Una asistencia antigua puede pertenecer a copias equivalentes de la misma jornada.
+  // La elección de un único propietario contable se hace al calcular y sincronizar.
+  const keys=new Set(candidates.map(x=>JSON.stringify([...accountingBase(x),x.horaInicio||'',x.horaFin||'',round(dayHours(x))])));
+  return candidates.length>1&&keys.size===1&&candidates.some(x=>x.id===p.id);
 }
 export function chooseAttendance(records) {
   if(!records.length)return {record:null,conflict:false};
@@ -87,23 +91,65 @@ export function attendanceHours(r,p,now=clock()) {
   }
   return round(actual===null?cap:Math.min(cap,actual));
 }
+// La identidad contable no depende del ID aleatorio de Firestore.
+export const accountingType = value => {
+ const v=normalize(value).replace(/\s+/g,' ');
+ return ['externa','externas'].includes(v)?'externa':['interescolar','interescolares'].includes(v)?'interescolar':v===''||['interna','internas'].includes(v)?'interna':v;
+};
+const accountingText = value => normalize(value).replace(/\s+/g,' ');
+const accountingBase = p => [p.alumnoId,accountingType(p.tipo),accountingText(p.lugar),accountingText(p.sector)];
+const activePractice = p => !p.archivada && p.estado!=='cancelada';
+const samePractice = (a,b) => a===b || (!!a.id && a.id===b.id);
+const firstPractice = rows => [...rows].sort((a,b)=>String(a.id||'').localeCompare(String(b.id||''),'en'))[0];
+export function practiceAccountingKey(p) {
+ return JSON.stringify([...accountingBase(p),p.fecha,p.fechaFin||p.fecha,p.horaInicio||'',p.horaFin||'',datesFor(p),manualHours(p)?'manual':'jornadas',manualHours(p)?num(p.horasTotales):dayHours(p)]);
+}
+export function equivalentManual(p,practices,now=clock()) {
+ if(manualHours(p))return null;
+ const base=JSON.stringify(accountingBase(p)),dates=JSON.stringify(datesFor(p)),total=round(datesFor(p).length*dayHours(p));
+ if(!total)return null;
+ // Sólo excluir el cronograma si el total manual describe exactamente el mismo período y carga.
+ return firstPractice(practices.filter(q=>activePractice(q)&&manualHours(q)&&calendarState(q,now)==='realizada'&&JSON.stringify(accountingBase(q))===base&&q.fecha===p.fecha&&(q.fechaFin||q.fecha)===(p.fechaFin||p.fecha)&&(q.horaInicio||'')===(p.horaInicio||'')&&(q.horaFin||'')===(p.horaFin||'')&&JSON.stringify(datesFor(q))===dates&&round(num(q.horasTotales))===total))||null;
+}
+export function jornadaPeers(p,date,practices) {
+ const key=JSON.stringify([...accountingBase(p),p.horaInicio||'',p.horaFin||'',round(dayHours(p))]);
+ return practices.filter(q=>activePractice(q)&&!manualHours(q)&&datesFor(q).includes(date)&&JSON.stringify([...accountingBase(q),q.horaInicio||'',q.horaFin||'',round(dayHours(q))])===key);
+}
+export function jornadaOwner(p,date,practices,now=clock()) {
+ return equivalentManual(p,practices,now)||firstPractice(jornadaPeers(p,date,practices))||p;
+}
+export function accountingOverlaps(p,practices) {
+ if(!activePractice(p))return [];
+ const dates=new Set(datesFor(p));
+ return practices.filter(q=>!samePractice(q,p)&&activePractice(q)&&q.alumnoId===p.alumnoId&&accountingType(q.tipo)===accountingType(p.tipo)&&datesFor(q).some(d=>dates.has(d))&&((manualHours(p)||manualHours(q))||((duration(p.horaInicio,p.horaFin)!==null&&duration(q.horaInicio,q.horaFin)!==null)&&p.horaInicio<q.horaFin&&q.horaInicio<p.horaFin))).map(q=>q.id).filter(Boolean);
+}
 export function calculatePractice(p,records,practices=[p],now=clock(),scope={}) {
   const dates=datesFor(p),state=calendarState(p,now),planned=round(dates.length*dayHours(p));
-  if(state==='cancelada')return {...p,estadoCalculado:state,horasRealizadas:0,horasPendientes:0,horasPlanificadas:0,jornadasPendientes:0,conflictosAsistencia:0};
+  const zero={...p,estadoCalculado:state,horasRealizadas:0,horasPendientes:0,horasPlanificadas:0,jornadasPendientes:0,conflictosAsistencia:0};
+  if(state==='cancelada')return zero;
   const inside=dates.filter(date=>(!scope.desde||date>=scope.desde)&&(!scope.hasta||date<=scope.hasta));
+  const possible=accountingOverlaps(p,practices);
   if(manualHours(p)) {
+    const matches=practices.filter(q=>activePractice(q)&&manualHours(q)&&practiceAccountingKey(q)===practiceAccountingKey(p));
+    const owner=firstPractice(matches)||p;
+    if(!samePractice(owner,p))return {...zero,duplicadaDe:owner.id,horasPlanificadasOriginales:num(p.horasTotales),posiblesSolapamientos:possible};
     const incompleteScope=(scope.desde&&scope.desde>p.fecha)||(scope.hasta&&scope.hasta<(p.fechaFin||p.fecha));
-    return {...p,estadoCalculado:state,horasRealizadas:state==='realizada'&&!incompleteScope?num(p.horasTotales):0,horasPlanificadas:num(p.horasTotales),horasPendientes:0,jornadasPendientes:0,conflictosAsistencia:0,requiereDesglose:!!incompleteScope};
+    return {...p,estadoCalculado:state,horasRealizadas:state==='realizada'&&!incompleteScope?num(p.horasTotales):0,horasPlanificadas:num(p.horasTotales),horasPendientes:0,jornadasPendientes:0,conflictosAsistencia:0,requiereDesglose:!!incompleteScope,posiblesSolapamientos:possible};
   }
-  let earned=0,missing=0,conflicts=0;
+  const manual=equivalentManual(p,practices,now);
+  if(manual)return {...zero,duplicadaDe:manual.id,horasPlanificadasOriginales:planned,posiblesSolapamientos:possible};
+  let earned=0,missing=0,conflicts=0,duplicated=0;
+  const ownDates=dates.filter(date=>samePractice(jornadaOwner(p,date,practices,now),p));
   for(const date of inside){
-    const {record,conflict}=chooseAttendance(records.filter(r=>!r.duplicadaEn&&r.fecha===date&&attendanceMatches(r,p,practices)));
+    if(!ownDates.includes(date)){duplicated++;continue;}
+    const peers=jornadaPeers(p,date,practices);
+    const {record,conflict}=chooseAttendance(records.filter(r=>!r.duplicadaEn&&r.fecha===date&&peers.some(q=>attendanceMatches(r,q,practices))));
     if(conflict){conflicts++;continue;}
     earned+=attendanceHours(record,p,now);
     if(finished(date,p,now)&&(!record||(!record.suprimido&&attendanceState(record)==='pendiente')))missing++;
   }
-  const future=inside.filter(date=>!finished(date,p,now)).length*dayHours(p);
-  return {...p,estadoCalculado:state,horasRealizadas:round(earned),horasPlanificadas:planned,horasPendientes:round(future),jornadasPendientes:missing,conflictosAsistencia:conflicts,cronogramaEstimado:!p.diasSemana?.length};
+  const future=inside.filter(date=>ownDates.includes(date)&&!finished(date,p,now)).length*dayHours(p);
+  return {...p,estadoCalculado:state,horasRealizadas:round(earned),horasPlanificadas:round(ownDates.length*dayHours(p)),horasPlanificadasOriginales:planned,horasPendientes:round(future),jornadasPendientes:missing,conflictosAsistencia:conflicts,cronogramaEstimado:!p.diasSemana?.length,jornadasDuplicadas:duplicated,posiblesSolapamientos:possible};
 }
 export const practiceId = p => 'import_'+encodeURIComponent([p.alumnoId,normalize(p.lugar),normalize(p.sector),normalize(p.tipo),p.fecha,p.fechaFin||p.fecha,p.horaInicio||'',p.horaFin||''].join('|'));
 export const attendanceId = (id,date) => 'jornada_'+encodeURIComponent(id)+'_'+date;
@@ -137,4 +183,5 @@ export function parseDays(value) {
   if(!days.length||days.some(x=>!Number.isInteger(x)||x<0||x>6))throw new Error('Indicá días exactos como lun,mar,mie,jue,vie.');
   return [...new Set(days)].sort();
 }
+
 

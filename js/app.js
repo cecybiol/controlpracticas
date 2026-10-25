@@ -1,7 +1,7 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { initApp as initDrive, buscarEnDrive, cargarTodosLosInformes } from "./drive.js";
 
-import { clock, addDays, datesFor, daysFor, calendarState, calculatePractice, manualHours, attendanceId, attendanceState, attendanceMatches, dayHours, targets, notificationCandidates, parseDays, validDate, num, duration, practiceId, expectedAgreementNames, validEmail } from "./domain.mjs";
+import { clock, addDays, datesFor, daysFor, calendarState, calculatePractice, practiceAccountingKey, manualHours, attendanceId, attendanceState, attendanceMatches, dayHours, targets, notificationCandidates, parseDays, validDate, num, duration, practiceId, expectedAgreementNames, validEmail } from "./domain.mjs";
 import { createPager, pageSpec, searchText, searchableFields } from "./record-pages.mjs";
 import { createFirestoreAccess, firestoreMessage } from "./firestore-access.mjs";
 import { synchronizeAttendance, validateAttendance } from "./attendance-store.mjs";
@@ -97,7 +97,7 @@ window.consultarHorasPractica=async(id,alumnoId)=>{
  try{const own=await practicasAlumno(alumnoId),p=own.find(p=>p.id===id);if(!p)return false;
   const real=own.reduce((n,p)=>n+horasCumplidas(p),0),total=own.reduce((n,p)=>n+horasCumplidas(p)+horasPendientes(p),0);
   acumuladosPracticas[alumnoId]={horasRealizadas:real,totalHoras:total};
-  for(const row of document.getElementById('tabla-practicas').querySelectorAll('[data-practica]')){const item=own.find(p=>p.id===row.dataset.practica);if(!item)continue;const hours=row.querySelector('[data-horas-practica]');if(hours)hours.textContent=`${horasCumplidas(item).toFixed(2)} / ${num(item.horasPlanificadas).toFixed(2)}${item.jornadasPendientes||item.conflictosAsistencia?' · revisar jornadas':''}`;row.querySelector('[data-acum-real]').textContent=real.toFixed(1);row.querySelector('[data-acum-total]').textContent=total.toFixed(1);}
+  for(const row of document.getElementById('tabla-practicas').querySelectorAll('[data-practica]')){const item=own.find(p=>p.id===row.dataset.practica);if(!item)continue;const hours=row.querySelector('[data-horas-practica]');if(hours)hours.textContent=`${horasCumplidas(item).toFixed(2)} / ${num(item.horasPlanificadas).toFixed(2)}${item.duplicadaDe?' · duplicada de '+item.duplicadaDe:item.jornadasDuplicadas?' · '+item.jornadasDuplicadas+' jornadas repetidas excluidas':item.jornadasPendientes||item.conflictosAsistencia?' · revisar jornadas':''}`;row.querySelector('[data-acum-real]').textContent=real.toFixed(1);row.querySelector('[data-acum-total]').textContent=total.toFixed(1);}
   ultimasPracticasFiltradas=ultimasPracticasFiltradas.map(row=>own.find(p=>p.id===row.id)?{...row,...own.find(p=>p.id===row.id)}:row);return true;
  }catch(err){mostrarAlerta(firestoreMessage(err),'danger');return false;}
 };
@@ -762,7 +762,7 @@ async function cargarPracticas(move=0) {
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
       <td>${escaparHTML(p.lugar)}</td>
       <td>${badgeTipo(p.tipo)}</td>
-      <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${etiquetaEstado(p)}</span></td>
+      <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${etiquetaEstado(p)}</span>${p.duplicadaDe||p.jornadasDuplicadas?`<div class="small text-warning">Duplicación detectada: consultar horas y revisar Estadísticas.</div>`:""}</td>
       <td>${escaparHTML(p.sector || "")}</td>
       <td>${p.horaInicio || ""} - ${p.horaFin || ""}</td>
       <td>
@@ -941,6 +941,9 @@ window.editarPractica = async (id, desdeFicha = false) => {
 
 document.getElementById("form-practica").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form=e.currentTarget;if(form.dataset.guardando==='1')return;
+  form.dataset.guardando='1';const saveButton=form.querySelector('[type="submit"]');if(saveButton)saveButton.disabled=true;
+  try {
   const id = document.getElementById("practica-id").value;
   const fecha = document.getElementById("practica-fecha").value;
   const fechaFin = document.getElementById("practica-fecha-fin").value;
@@ -989,6 +992,8 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     contacto: document.getElementById("practica-contacto").value.trim(),
     notas: document.getElementById("practica-notas").value.trim(),
   };
+  const previousPractices=await readForStudents('practicas',alumnosSeleccionados);
+  for(const alumnoId of alumnosSeleccionados){const candidate={...datos,alumnoId};const existing=previousPractices.find(p=>p.id!==id&&!p.archivada&&p.estado!=='cancelada'&&practiceAccountingKey(p)===practiceAccountingKey(candidate));if(existing)throw new Error(`Ya existe esta práctica para el alumno (${existing.id}). Editá el registro existente para evitar duplicar horas.`);}
   if (id) {
     const anterior = await getDoc(doc(db, "practicas", id));
     const camposAviso = ["alumnoId", "fecha", "fechaFin", "lugar", "sector", "horaInicio", "horaFin", "tutorResponsable", "tutorEmail", "contacto", "acuerdoNombre"];
@@ -1013,6 +1018,8 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     cargarPracticas();
   }
   practicaOrigenAlumnoId = null;
+  } catch(err){mostrarAlerta(firestoreMessage(err),'danger');}
+  finally{delete form.dataset.guardando;if(saveButton)saveButton.disabled=false;}
 });
 
 window.eliminarPractica = async (id, desdeFicha = false) => {
@@ -2127,12 +2134,23 @@ document.getElementById("btn-estad-guardar-objetivo")?.addEventListener("click",
   }
 });
 
+function mostrarRevisionContabilidad(practicas){
+ const table=document.getElementById('tabla-estadisticas')?.closest('table');if(!table)return;
+ let notice=document.getElementById('revision-contabilidad-horas');if(!notice){notice=document.createElement('div');notice.id='revision-contabilidad-horas';notice.className='alert alert-warning';table.insertAdjacentElement('beforebegin',notice);}
+ const rows=practicas.filter(p=>p.duplicadaDe||p.jornadasDuplicadas||p.posiblesSolapamientos?.length);
+ notice.replaceChildren();notice.hidden=!rows.length;if(!rows.length)return;
+ const title=document.createElement('strong');title.textContent='Revisión de contabilidad: las jornadas equivalentes se cuentan una sola vez. Los demás solapamientos requieren revisión.';notice.append(title);
+ const list=document.createElement('ul');for(const p of rows){const item=document.createElement('li');item.textContent=`${cacheAlumnos.find(a=>a.id===p.alumnoId)?nombreCompleto(cacheAlumnos.find(a=>a.id===p.alumnoId)):p.alumnoId} · ${p.lugar||''} · ${fmtRangoFechas(p)} · registro ${p.id}: ${p.duplicadaDe?'excluido por duplicado de '+p.duplicadaDe:p.jornadasDuplicadas?p.jornadasDuplicadas+' jornadas repetidas excluidas':'revisar coincidencias con '+p.posiblesSolapamientos.join(', ')}. Horas acreditadas: ${num(p.horasRealizadas).toFixed(2)}.`;list.append(item);}notice.append(list);
+}
+
 async function cargarEstadisticas() {
+  firestoreAccess.clear();
   await sincronizarAsistenciasAutomaticas(true);
   await cargarObjetivoHoras();
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = await enriquecerPracticas(snap.docs.map(d=>({id:d.id,...d.data()})));
+  mostrarRevisionContabilidad(practicas);
 
   const porAlumno = {};
   alumnos.forEach(a => {
@@ -3095,4 +3113,5 @@ function initializeRemoteLists(){
  actionButton('btn-sincronizar-asistencia',async()=>{await sincronizarAsistenciasAutomaticas(true);await cargarAsistencia();});
 }
 initializeRemoteLists();
+
 
