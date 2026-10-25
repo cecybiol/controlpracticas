@@ -90,8 +90,8 @@ function attachStudentSearch(id){
 function attendanceSpec(){return pageSpec('asistencias',{equal:{fecha:valueOf('asist-filtro-fecha'),alumnoId:valueOf('asist-filtro-alumno'),lugar:valueOf('asist-filtro-lugar'),tipo:valueOf('asist-filtro-tipo'),estado:valueOf('asist-filtro-estado')},from:valueOf('asist-filtro-desde'),to:valueOf('asist-filtro-hasta')});}
 async function readForStudents(name,ids){const unique=[...new Set(ids)].filter(Boolean),rows=[];for(let i=0;i<unique.length;i+=30){const snap=await getDocs(query(collection(db,name),where('alumnoId','in',unique.slice(i,i+30))));rows.push(...snap.docs.map(rowData));}return rows;}
 async function practicasAlumno(id){
- const [practices,attendance]=await Promise.all([getDocs(query(collection(db,'practicas'),where('alumnoId','==',id))),getDocs(query(collection(db,'asistencias'),where('alumnoId','==',id)))]);
- const raw=practices.docs.map(rowData).filter(p=>!p.archivada),records=attendance.docs.map(rowData);return raw.map(p=>calculatePractice(p,records,raw));
+ const [practices,attendance,legacy]=await Promise.all(['practicas','asistencias','faltas'].map(name=>getDocs(query(collection(db,name),where('alumnoId','==',id)))));
+ const raw=practices.docs.map(rowData).filter(p=>!p.archivada),records=[...attendance.docs.map(rowData),...legacy.docs.map(d=>({id:d.id,...d.data(),origen:'falta_legacy',estado:d.data().justificada?'ausente_justificado':'ausente_injustificado',presente:false}))];return raw.map(p=>calculatePractice(p,records,raw));
 }
 window.consultarHorasPractica=async(id,alumnoId)=>{
  try{const own=await practicasAlumno(alumnoId),p=own.find(p=>p.id===id);if(!p)return false;
@@ -214,10 +214,17 @@ async function lecturaPracticas() {
 }
 async function lecturaAsistencias() {
  const q=usuarioActual?.rol === "alumno" ? query(collection(db,"asistencias"),where("alumnoId","==",usuarioActual.alumnoId||"__sin_alumno__")) : collection(db,"asistencias");
- const snap=await getDocs(q);return snap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.duplicadaEn);
+ const legacyQuery=usuarioActual?.rol === "alumno" ? query(collection(db,"faltas"),where("alumnoId","==",usuarioActual.alumnoId||"__sin_alumno__")) : collection(db,"faltas");
+ const [snap,legacy]=await Promise.all([getDocs(q),getDocs(legacyQuery)]);
+ return [...snap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.duplicadaEn),...legacy.docs.map(d=>({id:d.id,...d.data(),origen:'falta_legacy',estado:d.data().justificada?'ausente_justificado':'ausente_injustificado',presente:false}))];
 }
 async function enriquecerPracticas(raw,records=null) {
- records=records||await lecturaAsistencias();const live=raw.filter(p=>!p.archivada);
+ records=records||await lecturaAsistencias();
+ if(!records.some(r=>r.origen==='falta_legacy')){
+  const q=usuarioActual?.rol==='alumno'?query(collection(db,'faltas'),where('alumnoId','==',usuarioActual.alumnoId||'__sin_alumno__')):collection(db,'faltas');
+  const legacy=await getDocs(q);records=[...records,...legacy.docs.map(d=>({id:d.id,...d.data(),origen:'falta_legacy',estado:d.data().justificada?'ausente_justificado':'ausente_injustificado',presente:false}))];
+ }
+ const live=raw.filter(p=>!p.archivada);
  return live.map(p=>calculatePractice(p,records,live));
 }
 function diasSeleccionadosFormulario() {
@@ -617,7 +624,7 @@ async function cargarPracticasDeAlumnoEnFicha(alumnoId) {
   document.getElementById("alumno-seguimiento").innerHTML = `<strong>Seguimiento:</strong> ${realizadas.length} práctica(s) realizada(s), ${horas.toFixed(1)} horas contabilizadas y ${presentes}/${asistencias.length} jornadas con asistencia.`;
   document.getElementById("tabla-alumno-practicas").innerHTML = propias.map(p => `
     <tr class="tipo-${p.tipo || "interna"}">
-      <td>${fmtRangoFechas(p)}</td><td>${p.lugar}</td>
+      <td>${fmtRangoFechas(p)}</td><td>${escaparHTML(p.lugar)}</td>
       <td>${String(p.sector || "Sin especificar").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]))}</td>
       <td>${badgeTipo(p.tipo)}</td>
       <td><span class="badge bg-${practicaRealizada(p) ? "success" : "secondary"}">${estadoPractica(p).replace("_", " ")}</span></td>
@@ -753,10 +760,10 @@ async function cargarPracticas(move=0) {
     <tr data-practica="${p.id}" class="tipo-${p.tipo || "interna"}">
       <td><input type="checkbox" class="chk-practica" value="${p.id}"></td>
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
-      <td>${p.lugar}</td>
+      <td>${escaparHTML(p.lugar)}</td>
       <td>${badgeTipo(p.tipo)}</td>
       <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${etiquetaEstado(p)}</span></td>
-      <td>${p.sector || ""}</td>
+      <td>${escaparHTML(p.sector || "")}</td>
       <td>${p.horaInicio || ""} - ${p.horaFin || ""}</td>
       <td>
         <input type="number" step="0.5" min="0" class="form-control form-control-sm" style="width:80px"
@@ -777,7 +784,7 @@ async function cargarPracticas(move=0) {
       </td>
       <td data-acum-real>Consultar</td>
       <td data-acum-total>Consultar</td>
-      <td>${p.tutorResponsable || ""}</td><td>${p.contacto || ""}</td>
+      <td>${escaparHTML(p.tutorResponsable || "")}</td><td>${escaparHTML(p.contacto || "")}</td>
       <td><button class="btn btn-sm btn-outline-secondary" onclick="window.editarPractica('${p.id}')">Editar</button></td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="window.eliminarPractica('${p.id}')">Eliminar</button></td>
     </tr>`;
@@ -806,6 +813,7 @@ window.actualizarDiasSemana = async (id, valor) => {
   const diasPorSemana = Number(valor);
   if (!Number.isInteger(diasPorSemana) || diasPorSemana < 1 || diasPorSemana > 7) { mostrarAlerta("Ingresá entre 1 y 7 días enteros.", "warning"); return; }
   const p = ultimasPracticasFiltradas.find(x => x.id === id);
+  if (p?.diasSemana?.length && diasPorSemana !== p.diasSemana.length) { mostrarAlerta("Elegí los días exactos desde Editar; cambiar sólo la cantidad no define el cronograma.", "warning"); await cargarPracticas(); return; }
   const cambios = { diasPorSemana };
   if (p && !manualHours(p)) {
     cambios.horasTotales = calcularHorasTotalesAutomatico(p.fecha, p.fechaFin, p.horasPorDia ?? p.horasTotales ?? 0, diasPorSemana, p.diasSemana || []);
@@ -986,7 +994,6 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
     const camposAviso = ["alumnoId", "fecha", "fechaFin", "lugar", "sector", "horaInicio", "horaFin", "tutorResponsable", "tutorEmail", "contacto", "acuerdoNombre"];
     if (anterior.exists() && camposAviso.some(c => (anterior.data()[c] || "") !== (datos[c] || ""))) {
       datos.avisoAutomaticoEnviado = false;
-      avisosEnviadosSesion.delete(id);
     }
     await guardarPracticaConInformes(id,datos,anterior.exists()?anterior.data():null);
   } else {
@@ -1035,7 +1042,7 @@ async function llenarSelectPracticaDeInforme(alumnoId, seleccionadaId = "") {
   const practicas = await practicasAlumno(alumnoId);
   const propias = practicas.filter(p => practicaRealizada(p));
   sel.innerHTML = `<option value="">Seleccionar práctica realizada</option>` +
-    propias.map(p => `<option value="${p.id}" ${p.id === seleccionadaId ? "selected" : ""}>${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
+    propias.map(p => `<option value="${p.id}" ${p.id === seleccionadaId ? "selected" : ""}>${escaparHTML(p.lugar)} (${fmtRangoFechas(p)})</option>`).join("");
 }
 document.getElementById("informe-alumno").addEventListener("change", (e) => llenarSelectPracticaDeInforme(e.target.value));
 
@@ -1072,7 +1079,7 @@ async function cargarCumplimientoInformes() {
       const cubiertas = new Set(informesPresentados.filter(i => i.alumnoId === alumnoId && idsRealizadas.has(i.practicaId)).map(i => i.practicaId));
       const faltantes = realizadas.filter(p => !cubiertas.has(p.id));
       const completo = faltantes.length === 0;
-      const detalleFaltantes = faltantes.map(p => `${p.lugar} (${fmtRangoFechas(p)})`).join("; ");
+      const detalleFaltantes = faltantes.map(p => `${escaparHTML(p.lugar)} (${fmtRangoFechas(p)})`).join("; ");
       const detalleFaltantesHTML = faltantes.map(p => `<div class="mb-1">${badgeTipo(p.tipo)} <strong>${escaparHTML(p.lugar||"Sin lugar")}</strong> · ${escaparHTML(p.sector||"Sin sector")} · ${fmtRangoFechas(p)}</div>`).join("");
       return `<tr class="${completo ? "table-success" : "table-danger"}">
         <td>${escaparHTML(mapaAlumnos[alumnoId] ? nombreCompleto(mapaAlumnos[alumnoId]) : "Alumno no encontrado")}</td>
@@ -1382,7 +1389,7 @@ function filaRegistrarDriveHTML(fila, alumnos) {
   const opcionesAlumnos = `<option value="">-- Seleccionar --</option>` +
     alumnos.map(a => `<option value="${a.id}" ${a.id === fila.alumnoIdSugerido ? "selected" : ""}>${nombreCompleto(a)} (${a.legajo})</option>`).join("");
   const opcionesPracticas = `<option value="">Sin vincular</option>` +
-    fila.practicasDelAlumno.map(p => `<option value="${p.id}" ${p.id === fila.practicaIdSugerido ? "selected" : ""}>${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
+    fila.practicasDelAlumno.map(p => `<option value="${p.id}" ${p.id === fila.practicaIdSugerido ? "selected" : ""}>${escaparHTML(p.lugar)} (${fmtRangoFechas(p)})</option>`).join("");
   const tituloEscapado = fila.tituloSugerido.replace(/"/g, "&quot;");
 
   return `
@@ -1469,7 +1476,7 @@ document.getElementById("tabla-registrar-informes-drive").addEventListener("chan
   const selPractica = document.querySelector(`.sel-practica-registrar[data-idx="${idx}"]`);
   if (selPractica) {
     selPractica.innerHTML = `<option value="">Sin vincular</option>` +
-      practicasDelAlumno.map(p => `<option value="${p.id}">${p.lugar} (${fmtRangoFechas(p)})</option>`).join("");
+      practicasDelAlumno.map(p => `<option value="${p.id}">${escaparHTML(p.lugar)} (${fmtRangoFechas(p)})</option>`).join("");
   }
 });
 
@@ -1579,8 +1586,15 @@ async function sincronizarAsistenciasAutomaticas(forzar=false,alumnoIds=null) {
  if(sincronizacionEnCurso)return sincronizacionEnCurso;
  if(!forzar&&ultimaSincronizacion&&Date.now()-ultimaSincronizacion<300000)return 0;
  sincronizacionEnCurso=(async()=>{
-  const [practices,records]=await Promise.all(alumnoIds?[readForStudents("practicas",alumnoIds),readForStudents("asistencias",alumnoIds)]:[lecturaPracticas(),lecturaAsistencias()]);
-  return synchronizeAttendance({db,api:{doc,runTransaction},practices,records,onPending:()=>mostrarAlerta("Quedan jornadas pendientes de sincronizar. Se procesan hasta 30 por revisión; volvé a Asistencia después de cinco minutos. Apps Script también procesa jornadas recientes.","info")});
+  const [practices,records]=await Promise.all(alumnoIds?[readForStudents("practicas",alumnoIds),readForStudents("asistencias",alumnoIds)]: [lecturaPracticas(),getDocs(collection(db,"asistencias")).then(s=>s.docs.map(rowData))]);
+  let created=0,pending=false;
+  for(let batch=0;batch<(forzar?10:1);batch++){
+   pending=false;created+=await synchronizeAttendance({db,api:{doc,runTransaction},practices,records,onPending:()=>{pending=true;}});
+   if(!pending)break;
+   records.splice(0,records.length,...(alumnoIds?await readForStudents("asistencias",alumnoIds):(await getDocs(collection(db,"asistencias"))).docs.map(rowData)));
+  }
+  if(pending)mostrarAlerta("Se procesaron hasta 300 jornadas. Volvé a pulsar Sincronizar para continuar el historial pendiente.","info");
+  return created;
  })();
  try{const n=await sincronizacionEnCurso;ultimaSincronizacion=Date.now();return n;}finally{sincronizacionEnCurso=null;}
 }
@@ -1708,7 +1722,7 @@ async function obtenerConfigNotificaciones() {
     const snap = await getDoc(doc(db, "configuracion", "notificaciones"));
     return snap.exists() ? { ...porDefecto, ...snap.data() } : porDefecto;
   } catch (err) {
-    return porDefecto;
+    throw new Error(`No se pudo leer la configuración de avisos: ${firestoreMessage(err)}`);
   }
 }
 
@@ -1746,31 +1760,34 @@ document.getElementById("btn-notif-guardar-config").addEventListener("click", as
 async function renderProximasYHistorial(move=0) {
   const dias = parseInt(document.getElementById("notif-dias").value || "3", 10);
   const hoy=hoyISO(),hasta=sumarDiasISO(hoy,dias);
-  const spec=pageSpec('practicas',{from:'',to:hasta,direction:'asc'});spec.filters.push(['fecha','>=',hoy]);
-  const page=await recordsPage('tabla-notif-proximas',spec,move,renderProximasYHistorial);if(!page)return;
-  const proximas=page.docs.map(rowData).filter(p=>!p.archivada&&['programada','en_curso'].includes(calendarState(p))&&!p.avisoAutomaticoEnviado);
+  if(!Number.isInteger(dias)||dias<0||dias>90)throw new Error('Los días de aviso deben estar entre 0 y 90.');
+  const snap=await getDocs(query(collection(db,'practicas'),where('fecha','>=',hoy),where('fecha','<=',hasta),orderBy('fecha','asc')));
+  const proximas=notificationCandidates(snap.docs.map(rowData),{diasAviso:dias});
+  document.getElementById('tabla-notif-proximas-remote-nav')?.remove();
   const mapaAlumnos=await relatedStudents(proximas);
   document.getElementById("tabla-notif-proximas").innerHTML = proximas.map(p => `
     <tr>
       <td><input type="checkbox" class="chk-notif-practica" value="${p.id}" checked></td>
       <td>${fmtFecha(p.fecha)}</td>
-      <td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td>
-      <td>${mapaAlumnos[p.alumnoId]?.email || "(sin email)"}</td>
-      <td>${p.lugar}</td>
+      <td>${escaparHTML(mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-")}</td>
+      <td>${escaparHTML(mapaAlumnos[p.alumnoId]?.email || "(sin email)")}</td>
+      <td>${escaparHTML(p.lugar)}</td>
     </tr>`).join("") || `<tr><td colspan="5" class="text-muted">No hay prácticas próximas en ese rango.</td></tr>`;
   document.getElementById("chk-todas-notificaciones").checked = proximas.length > 0;
+  document.getElementById("btn-notif-enviar").title = `${proximas.length} prácticas disponibles; se permiten hasta 100 por solicitud.`;
 
   document.getElementById("btn-notif-enviar").dataset.proximas = JSON.stringify(proximas);
 
   const histSnap = await getDocs(query(collection(db, "notificaciones_log"), orderBy("fechaEnvio", "desc"), limit(20)));
-  const historial = histSnap.docs.map(d => d.data()).slice(0, 30);
+  const historial = histSnap.docs.map(d => d.data());
+  const mapaHistorial=await relatedStudents(historial);
   document.getElementById("tabla-notif-historial").innerHTML = historial.map(h => `
     <tr>
       <td>${new Date(h.fechaEnvio).toLocaleString()}</td>
-      <td>${h.tipo === "correo_particular" ? `${escaparHTML(h.nombreDestinatario||"Destinatario particular")} (${escaparHTML(h.destinatario||"")})` : (mapaAlumnos[h.alumnoId] ? nombreCompleto(mapaAlumnos[h.alumnoId]) : h.alumnoId)}</td>
+      <td>${h.tipo === "correo_particular" ? `${escaparHTML(h.nombreDestinatario||"Destinatario particular")} (${escaparHTML(h.destinatario||"")})` : (mapaHistorial[h.alumnoId] ? escaparHTML(nombreCompleto(mapaHistorial[h.alumnoId])) : escaparHTML(h.alumnoId))}</td>
       <td>${["automatico","programado"].includes(h.origen) ? "Automático" : "Manual"}</td>
-      <td><span class="badge bg-${h.estado === "enviado" ? "success" : "danger"}">${h.estado}</span></td>
-      <td>${h.detalle || "-"}</td>
+      <td><span class="badge bg-${h.estado === "enviado" ? "success" : "danger"}">${escaparHTML(h.estado)}</span></td>
+      <td>${escaparHTML(h.detalle || "-")}</td>
     </tr>`).join("") || `<tr><td colspan="5" class="text-muted">Sin envíos todavía.</td></tr>`;
 }
 
@@ -1797,7 +1814,9 @@ document.getElementById("btn-notif-enviar").addEventListener("click",async e=>{
   const ids=[...document.querySelectorAll(".chk-notif-practica:checked")].map(x=>x.value);
   if(!ids.length||ids.length>100)throw new Error("Seleccioná entre una y cien prácticas.");
   const cc=document.getElementById("notif-cc").value.trim();if(cc&&!emailValido(cc))throw new Error("Correo de copia inválido.");
-  const id=await solicitarAviso("enviar",{practicaIds:ids,cc,mensaje:document.getElementById("notif-mensaje").value.trim()});
+  const config=await obtenerConfigNotificaciones();
+  if(Number(document.getElementById("notif-dias").value)!==Number(config.diasAviso))throw new Error("Guardá los días de aviso antes de solicitar el envío.");
+  const id=await solicitarAviso("enviar",{practicaIds:ids,...(cc?{cc}:{}),mensaje:document.getElementById("notif-mensaje").value.trim()});
   mostrarAlerta("Solicitud registrada. Apps Script la procesará en su próxima ejecución; todavía no se enviaron los correos.","info");
   mostrarSolicitud(id);await renderSolicitudes();
  }catch(err){mostrarAlerta(err.message,"danger");}finally{btn.disabled=false;envioEnCurso=false;}
@@ -1827,6 +1846,7 @@ async function renderSolicitudes(){
  if(!snap.docs.length)out.textContent="Sin solicitudes.";
  const config=await obtenerConfigNotificaciones(),heartbeat=document.getElementById("notif-ultimo-control");
  if(heartbeat)heartbeat.textContent=config.ultimoControl?`Último control: ${config.ultimoControl.fecha}, ${config.ultimoControl.estado}. Cuota disponible: ${config.ultimoControl.cuotaDisponible??"sin dato"}. ${config.ultimoControl.detalle||""}`:"Apps Script todavía no registró una ejecución. Seguí CONFIGURACION_GRATUITA.md.";
+ if(heartbeat&&config.ultimoControl){const age=Date.now()-Date.parse(config.ultimoControl.fecha);if(!Number.isFinite(age)||age>2*60*60*1000)heartbeat.textContent+=' Atención: no hay una ejecución reciente. Revisá el disparador y las ejecuciones de Apps Script.';const details=config.ultimoControl.detalles||[];for(const row of details.filter(r=>['bloqueado','requiere_revision'].includes(r.estado))){const line=document.createElement('p');line.textContent=`${row.lugar||row.practicaId||''}: ${row.estado}. ${row.detalle||''}`;heartbeat.append(line);}}
 }
 document.getElementById("btn-notif-actualizar")?.addEventListener("click",async()=>{firestoreAccess.clear();await renderSolicitudes();await renderProximasYHistorial();if(solicitudVisible)await mostrarSolicitud(solicitudVisible);});
 // Los avisos automáticos los procesa Apps Script, independientemente del inicio de sesión.
@@ -1967,7 +1987,7 @@ document.getElementById("btn-generar-pdf").addEventListener("click", async () =>
       if(opciones.has("practicas"))tabla("Prácticas realizadas",["Período","Tipo","Lugar","Sector","Horas"],propiasFiltradas.map(p=>[fmtRangoFechas(p),infoTipo(p.tipo).label,p.lugar||"",p.sector||"",horasCumplidas(p).toFixed(2)]));
       if(opciones.has("inasistencias"))tabla("Inasistencias",["Fecha","Lugar","Estado","Observación"],asistFiltrada.filter(r=>["ausente_justificado","ausente_injustificado"].includes(r.estado)||(!r.estado&&r.presente===false)).map(r=>[fmtFecha(r.fecha),r.lugar||"",ESTADOS_ASISTENCIA[r.estado]||"Ausente injustificado",r.observaciones||""]));
       if(opciones.has("tardanzas"))tabla("Tardanzas",["Fecha","Lugar","Horario","Observación"],asistFiltrada.filter(r=>r.estado==="tardanza").map(r=>[fmtFecha(r.fecha),r.lugar||"",`${r.horaEntrada||""}-${r.horaSalida||""}`,r.observaciones||""]));
-      if(opciones.has("informes"))tabla("Informes presentados",["Fecha","Título","Práctica","Estado","Observación"],informesFiltrados.filter(i=>i.estado!=="pendiente").map(i=>{const p=mapaPracticas[i.practicaId];return[fmtFecha(i.fechaPresentacion||i.fecha),i.titulo||"",p?`${p.lugar} (${fmtRangoFechas(p)})`:"",i.estado||"",i.observaciones||""];}));
+      if(opciones.has("informes"))tabla("Informes presentados",["Fecha","Título","Práctica","Estado","Observación"],informesFiltrados.filter(i=>i.estado!=="pendiente").map(i=>{const p=mapaPracticas[i.practicaId];return[fmtFecha(i.fechaPresentacion||i.fecha),i.titulo||"",p?`${escaparHTML(p.lugar)} (${fmtRangoFechas(p)})`:"",i.estado||"",i.observaciones||""];}));
       const devolucion=document.getElementById("pdf-devolucion").value.trim();if(opciones.has("devolucion"))tabla("Devolución / observaciones docentes",["Observación"],[[devolucion||"Sin observaciones docentes."]]);
     }
     if(!incluidos)throw new Error("Ningún alumno seleccionado tiene prácticas realizadas que coincidan con el alcance elegido.");
@@ -2010,6 +2030,8 @@ document.getElementById("form-usuario").addEventListener("submit", async (e) => 
 
 // ------------------------------------------------------------ DASHBOARD -
 async function cargarDashboardCompleto() {
+  firestoreAccess.clear();
+  await sincronizarAsistenciasAutomaticas(true);
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = await enriquecerPracticas(snap.docs.map(d=>({id:d.id,...d.data()})));
@@ -2034,9 +2056,9 @@ async function cargarDashboardCompleto() {
     .map(p => p)
     .filter(p => p.fecha > hoy && estadoPractica(p) === "programada")
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
-    .slice(0, 5);
+    ;
   document.getElementById("tabla-proximas").innerHTML = proximas.map(p => `
-    <tr><td>${fmtRangoFechas(p)}</td><td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td><td>${p.lugar}</td></tr>
+    <tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-")}</td><td>${escaparHTML(p.lugar)}</td></tr>
   `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas próximas.</td></tr>`;
 
   const enCurso = practicas
@@ -2044,7 +2066,7 @@ async function cargarDashboardCompleto() {
     .filter(p => estadoPractica(p) === "en_curso")
     .sort((a, b) => String(a.lugar || "").localeCompare(String(b.lugar || "")));
   document.getElementById("tabla-en-curso").innerHTML = enCurso.map(p => `
-    <tr><td>${fmtRangoFechas(p)}</td><td>${mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-"}</td><td>${escaparHTML(p.lugar)}</td></tr>
+    <tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(mapaAlumnos[p.alumnoId] ? nombreCompleto(mapaAlumnos[p.alumnoId]) : "-")}</td><td>${escaparHTML(p.lugar)}</td></tr>
   `).join("") || `<tr><td colspan="3" class="text-muted">No hay prácticas en curso hoy.</td></tr>`;
   await aplicarConfigDashboard();
 }
@@ -2053,8 +2075,9 @@ async function cargarDashboard(){
  for(const id of ['stat-horas','stat-alumnos','stat-practicas'])document.getElementById(id).textContent='Consultar';
  document.getElementById('tabla-horas-sector').innerHTML='<tr><td colspan="2">Usá Calcular indicadores para consultar las horas del historial completo.</td></tr>';
  const hoy=hoyISO();
- const [future,current]=await Promise.all([getDocs(query(collection(db,'practicas'),where('fecha','>',hoy),orderBy('fecha','asc'),limit(5))),getDocs(query(collection(db,'practicas'),where('fechaFin','>=',hoy),where('fecha','<=',hoy),orderBy('fechaFin','asc'),orderBy('fecha','asc'),limit(20)))]);
- const proximas=future.docs.map(rowData).filter(p=>!p.archivada&&calendarState(p)==='programada'),enCurso=current.docs.map(rowData).filter(p=>!p.archivada&&calendarState(p)==='en_curso');
+ const raw=(await getDocs(collection(db,'practicas'))).docs.map(rowData).filter(p=>!p.archivada);
+ const proximas=raw.filter(p=>p.fecha>hoy&&calendarState(p)==='programada').sort((a,b)=>a.fecha.localeCompare(b.fecha));
+ const enCurso=raw.filter(p=>calendarState(p)==='en_curso').sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
  const mapa=await relatedStudents([...proximas,...enCurso]);
  for(const [id,rows] of [['tabla-proximas',proximas],['tabla-en-curso',enCurso]])document.getElementById(id).innerHTML=rows.map(p=>`<tr><td>${fmtRangoFechas(p)}</td><td>${escaparHTML(mapa[p.alumnoId]?nombreCompleto(mapa[p.alumnoId]):'—')}</td><td>${escaparHTML(p.lugar)}</td></tr>`).join('')||'<tr><td colspan="3">No hay prácticas en esta consulta.</td></tr>';
  await aplicarConfigDashboard();
@@ -2105,6 +2128,7 @@ document.getElementById("btn-estad-guardar-objetivo")?.addEventListener("click",
 });
 
 async function cargarEstadisticas() {
+  await sincronizarAsistenciasAutomaticas(true);
   await cargarObjetivoHoras();
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
@@ -3071,3 +3095,4 @@ function initializeRemoteLists(){
  actionButton('btn-sincronizar-asistencia',async()=>{await sincronizarAsistenciasAutomaticas(true);await cargarAsistencia();});
 }
 initializeRemoteLists();
+

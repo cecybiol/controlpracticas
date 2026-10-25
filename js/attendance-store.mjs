@@ -66,3 +66,4 @@ export function validateAttendance(data,p,now=clock()){
   if(attendanceState(data)==='tardanza'&&(!data.horaEntrada||!data.horaSalida))throw new Error('La tardanza requiere entrada y salida reales.');
   if(data.horaEntrada&&data.horaSalida&&data.horaSalida<=data.horaEntrada)throw new Error('La salida debe ser posterior a la entrada.');
 }
+

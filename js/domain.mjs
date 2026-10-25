@@ -60,6 +60,7 @@ export function calendarState(p, now=clock()) {
 }
 export function attendanceMatches(r,p,practices=[]) {
   if(r.alumnoId!==p.alumnoId)return false;
+  if(r.origen==='falta_legacy')return (!r.practicaId||r.practicaId===p.id)&&(!r.lugar||normalize(r.lugar)===normalize(p.lugar))&&datesFor(p).includes(r.fecha);
   if(r.practicaId)return r.practicaId===p.id;
   const candidates=practices.filter(x=>x.alumnoId===r.alumnoId && !x.archivada && normalize(x.lugar)===normalize(r.lugar) && (!r.tipo||normalize(x.tipo)===normalize(r.tipo)) && datesFor(x).includes(r.fecha));
   return candidates.length===1 && candidates[0].id===p.id;
@@ -122,7 +123,7 @@ export function notificationCandidates(practices,config,now=clock()) {
   const days=Number(config.diasAviso??3);
   if(!Number.isInteger(days)||days<0||days>90)throw new Error('Los días de aviso deben estar entre 0 y 90.');
   const until=addDays(now.date,days);
-  return practices.filter(p=>!p.archivada&&p.estado!=='cancelada'&&!manualHours(p)&&p.fecha>=now.date&&p.fecha<=until&&!p.avisoAutomaticoEnviado);
+  return practices.filter(p=>!p.archivada&&p.estado!=='cancelada'&&!manualHours(p)&&p.fecha>=now.date&&p.fecha<=until&&!p.avisoAutomaticoEnviado&&['programada','en_curso'].includes(calendarState(p,now)));
 }
 export function targets(hours,goals) {
   const earned=[num(hours.interna),num(hours.externa),num(hours.interescolar)],req=[num(goals.interna),num(goals.externa),num(goals.interescolar)];
@@ -136,3 +137,4 @@ export function parseDays(value) {
   if(!days.length||days.some(x=>!Number.isInteger(x)||x<0||x>6))throw new Error('Indicá días exactos como lun,mar,mie,jue,vie.');
   return [...new Set(days)].sort();
 }
+
