@@ -222,6 +222,13 @@
         </div>
       </div>
 
+      <details id="revision-contabilidad-horas" class="border rounded p-3 mb-3">
+        <summary class="fw-semibold">Revisión de horas y solapamientos <span id="revision-contabilidad-cantidad" class="badge bg-secondary"></span></summary>
+        <p class="small text-muted mt-3">Calculá las estadísticas para buscar cruces. Las jornadas equivalentes ya se cuentan una sola vez. Compará los demás registros y verificá la documentación antes de resolverlos.</p>
+        <p id="revision-contabilidad-estado" role="status"></p>
+        <div id="revision-contabilidad-casos"></div>
+      </details>
+
       <!-- Objetivo de horas: es el mismo para todos los alumnos del colegio,
            un valor por tipo de práctica. Solo un admin puede modificarlo;
            el resto de la vista lo usa para calcular el % cumplido real. -->
@@ -402,6 +409,14 @@
               <div class="col-md-6 col-lg-3 mb-2"><label class="form-label">Teléfono</label><input type="tel" class="form-control" id="alumno-telefono" autocomplete="tel" placeholder="Ej: 2664 123456"></div>
             </div>
 
+            <fieldset class="border rounded p-2 mb-3"><legend class="float-none w-auto px-1 fs-6">Datos para acuerdos</legend><div class="row g-2">
+              <div class="col-md-4"><label class="form-label" for="alumno-dni">DNI del alumno</label><input class="form-control" id="alumno-dni" maxlength="30"></div>
+              <div class="col-md-8"><label class="form-label" for="alumno-domicilio">Domicilio del alumno</label><input class="form-control" id="alumno-domicilio" maxlength="500"></div>
+              <div class="col-md-8"><label class="form-label" for="alumno-tutor-familiar">Apellido y nombre del tutor familiar</label><input class="form-control" id="alumno-tutor-familiar" maxlength="200"></div>
+              <div class="col-md-4"><label class="form-label" for="alumno-dni-tutor">DNI del tutor familiar</label><input class="form-control" id="alumno-dni-tutor" maxlength="30"></div>
+              <div class="col-12"><label class="form-label" for="alumno-domicilio-tutor">Domicilio del tutor familiar</label><input class="form-control" id="alumno-domicilio-tutor" maxlength="500"></div>
+            </div></fieldset>
+
             <div id="alumno-practicas-wrap" class="d-none mt-3">
               <hr>
               <div class="d-flex justify-content-between align-items-center mb-2">
@@ -488,6 +503,7 @@
             <div class="col-lg-5"><div class="grupo-campo"><label class="form-label fw-semibold">Alumnos asignados</label><input class="form-control form-control-sm mb-2" id="practica-alumno-buscar" placeholder="Buscar alumno..."><div id="practica-alumno-checks" class="selector-alumnos"></div><select class="d-none" id="practica-alumno" multiple></select><div class="form-text">Marcá las casillas y verificá la lista.</div><div id="practica-alumnos-seleccionados" class="alumnos-seleccionados mt-2"></div></div></div>
             <div class="col-lg-7"><div class="row g-3">
             <div class="col-md-6"><div class="grupo-campo"><label class="form-label fw-semibold">Lugar</label><select class="form-select" id="practica-lugar-select"></select><input class="form-control mt-2 d-none" id="practica-lugar-nuevo" placeholder="Nombre del nuevo lugar"><input type="hidden" id="practica-lugar" required></div></div>
+            <div class="col-md-6"><label class="form-label fw-semibold" for="practica-domicilio-lugar">Domicilio del lugar de práctica</label><input class="form-control" id="practica-domicilio-lugar" maxlength="500"></div>
             <div class="col-md-6"><div class="grupo-campo"><label class="form-label fw-semibold">Tipo de práctica</label>
               <select class="form-select" id="practica-tipo">
                 <option value="interna">Interna</option>
@@ -808,6 +824,40 @@
     <section class="vista" id="vista-notificaciones">
       <h3>Notificaciones por mail</h3><p class="text-muted">Cada recordatorio de práctica incluye el acuerdo PDF individual del alumno, lugar y sector. Si el PDF falta, está duplicado o es inválido, el envío queda bloqueado. “Enviado” significa aceptado por MailApp; no confirma recepción.</p>
       <p class="text-muted">Avisa a los alumnos sobre prácticas próximas (nuevas o ya cargadas).</p>
+
+      <div class="card p-3 shadow-sm mb-3" id="acuerdos-editor">
+        <h5>Crear acuerdos individuales</h5>
+        <p>Subí el modelo Word, elegí los textos que deben cambiar y seleccioná los alumnos con su práctica. Cada acuerdo se descarga en Word para revisar y firmar.</p>
+        <label for="acuerdos-plantilla" class="form-label">1. Plantilla Word (.docx)</label>
+        <input id="acuerdos-plantilla" class="form-control mb-2" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <div class="form-text mb-3">Podés usar el documento original con sus textos en negrita o marcadores como {{nombre_alumno}} y {{apellido_alumno}}. La plantilla se usa durante esta sesión.</div>
+        <details class="mb-3" open>
+          <summary class="fw-semibold">2. Elegir los campos a reemplazar</summary>
+          <p class="small mt-2">En cada campo, copiá el texto original o elegilo entre los fragmentos en negrita. También podés seleccionarlo en la vista del texto y asignarlo. Se reemplazan todas las coincidencias del texto elegido. Los campos sin marcar conservan el contenido del modelo.</p>
+          <label for="acuerdos-texto" class="form-label">Texto de la plantilla</label>
+          <textarea id="acuerdos-texto" class="form-control mb-2" rows="8" readonly></textarea>
+          <div class="d-flex gap-2 flex-wrap mb-2"><label for="acuerdos-asignar-campo" class="visually-hidden">Campo para el texto seleccionado</label><select class="form-select w-auto" id="acuerdos-asignar-campo"></select><button class="btn btn-outline-primary btn-sm" id="acuerdos-asignar" type="button">Asignar texto seleccionado</button></div>
+          <datalist id="acuerdos-negritas"></datalist>
+          <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th scope="col">Usar</th><th scope="col">Campo</th><th scope="col">Texto original o marcador</th><th scope="col">Coincidencias</th></tr></thead><tbody id="acuerdos-mapas"></tbody></table></div>
+          <div class="d-flex gap-2 flex-wrap"><label class="visually-hidden" for="acuerdos-campo-nuevo">Nombre del campo adicional</label><input class="form-control w-auto" id="acuerdos-campo-nuevo" maxlength="80" placeholder="Otro campo del modelo"><button class="btn btn-outline-secondary btn-sm" id="acuerdos-agregar-campo" type="button">Agregar campo</button></div>
+        </details>
+        <h6>3. Seleccionar alumnos y prácticas</h6>
+        <div class="row g-2 align-items-end mb-2">
+          <div class="col-md-3"><label for="acuerdos-desde" class="form-label">Comienzan desde</label><input class="form-control" id="acuerdos-desde" type="date"></div>
+          <div class="col-md-3"><label for="acuerdos-hasta" class="form-label">Comienzan hasta</label><input class="form-control" id="acuerdos-hasta" type="date"></div>
+          <div class="col-md-4"><label for="acuerdos-alumno" class="form-label">Alumno (opcional)</label><select class="form-select" id="acuerdos-alumno"><option value="">Todos</option></select></div>
+          <div class="col-md-2"><button id="acuerdos-buscar" class="btn btn-outline-primary" type="button">Buscar prácticas</button></div>
+        </div>
+        <div class="table-responsive"><table class="table table-sm"><thead><tr><th scope="col">Elegir</th><th scope="col">Alumno</th><th scope="col">Fecha o período</th><th scope="col">Lugar</th><th scope="col">Sector</th></tr></thead><tbody id="tabla-acuerdos-practicas" data-remote-page="true"></tbody></table></div>
+        <div class="d-flex align-items-center gap-2 mb-2"><span id="acuerdos-contador" class="small"></span><button class="btn btn-link btn-sm" id="acuerdos-limpiar" type="button">Vaciar selección</button></div>
+        <h6>4. Revisar los datos y generar</h6>
+        <p class="small">Completá los datos faltantes y revisá los DNI y los domicilios. El tutor familiar y el tutor de práctica son campos separados. Los cambios de esta sección se aplican a los documentos generados. Para reutilizarlos en futuras tandas, guardalos desde la ficha del alumno o desde Editar práctica.</p>
+        <div id="acuerdos-seleccionados"></div>
+        <label class="form-label" for="acuerdos-vista-generada">Vista del texto completado</label><textarea id="acuerdos-vista-generada" class="form-control mb-2" rows="7" readonly></textarea>
+        <div class="form-text mb-2">La vista muestra el texto. El Word descargado conserva el formato y las imágenes de la plantilla. Para usarlo en los avisos, exportalo como PDF y subilo a la carpeta de acuerdos configurada con el mismo nombre base.</div>
+        <button class="btn btn-primary align-self-start" type="button" id="acuerdos-generar" disabled>Descargar acuerdos Word</button>
+        <p class="small mt-2 mb-0" id="acuerdos-estado" role="status" aria-live="polite"></p>
+      </div>
 
       <div id="notif-config-alerta" class="alert alert-warning d-none"></div>
 

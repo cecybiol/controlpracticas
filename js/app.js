@@ -1,7 +1,8 @@
+import { initAgreementEditor } from "./agreements-ui.mjs";
 import { firebaseConfig } from "./firebase-config.js";
 import { initApp as initDrive, buscarEnDrive, cargarTodosLosInformes } from "./drive.js";
 
-import { clock, addDays, datesFor, daysFor, calendarState, calculatePractice, practiceAccountingKey, manualHours, attendanceId, attendanceState, attendanceMatches, dayHours, targets, notificationCandidates, parseDays, validDate, num, duration, practiceId, expectedAgreementNames, validEmail } from "./domain.mjs";
+import { clock, addDays, datesFor, daysFor, calendarState, calculatePractice, practiceAccountingKey, accountingExcluded, accountingOverlaps, equivalentOverlap, overlapDecision, manualHours, attendanceId, attendanceState, attendanceMatches, dayHours, targets, notificationCandidates, parseDays, validDate, num, duration, practiceId, expectedAgreementNames, validEmail } from "./domain.mjs";
 import { createPager, pageSpec, searchText, searchableFields } from "./record-pages.mjs";
 import { createFirestoreAccess, firestoreMessage } from "./firestore-access.mjs";
 import { synchronizeAttendance, validateAttendance } from "./attendance-store.mjs";
@@ -101,6 +102,31 @@ window.consultarHorasPractica=async(id,alumnoId)=>{
   ultimasPracticasFiltradas=ultimasPracticasFiltradas.map(row=>own.find(p=>p.id===row.id)?{...row,...own.find(p=>p.id===row.id)}:row);return true;
  }catch(err){mostrarAlerta(firestoreMessage(err),'danger');return false;}
 };
+
+const editorAcuerdos = initAgreementEditor({
+  document, tools: window,
+  allowed: () => ["admin", "tutor"].includes(usuarioActual?.rol),
+  studentId: () => document.getElementById("acuerdos-alumno").value,
+  message: firestoreMessage,
+  filenameFor: (student, practice) => {
+    const name = expectedAgreementNames(student, practice)[0] || "acuerdo.pdf";
+    return name.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "-").slice(0, 140) + ".docx";
+  },
+  readPage: async ({ from, to, alumnoId, move }, reload) => {
+    const spec = pageSpec("practicas", { equal: { alumnoId }, to, direction: "desc" });
+    spec.filters.push(["fecha", ">=", from]);
+    const page = await recordsPage("tabla-acuerdos-practicas", spec, move, reload);
+    if (!page) return null;
+    const practices = page.docs.map(rowData).filter(p => !p.archivada && p.estado !== "cancelada");
+    const students = await relatedStudents(practices);
+    return practices.filter(p => students[p.alumnoId] && !students[p.alumnoId].archivado).map(practice => ({ practice, student: students[practice.alumnoId] }));
+  },
+  download: (bytes, name, type) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const link = document.createElement("a"); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
+});
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -204,7 +230,7 @@ function escaparHTML(valor) {
 }
 function estadoPractica(p) { return p?.estadoCalculado || calendarState(p || {}); }
 function practicaRealizada(p) { return estadoPractica(p) === "realizada"; }
-function horasCumplidas(p) { return num(p?.horasRealizadas ?? (manualHours(p || {}) && practicaRealizada(p) ? p.horasTotales : 0)); }
+function horasCumplidas(p) { if (p && accountingExcluded(p)) return 0; return num(p?.horasRealizadas ?? (manualHours(p || {}) && practicaRealizada(p) ? p.horasTotales : 0)); }
 function horasPendientes(p) { return estadoPractica(p) === "cancelada" ? 0 : num(p?.horasPendientes); }
 function conHoras(p) { return horasCumplidas(p) > 0; }
 function etiquetaEstado(p) { return ({programada:"Programada",en_curso:"En curso",realizada:"Realizada",cancelada:"Cancelada",pendiente_revision:"Revisar cronograma"})[estadoPractica(p)] || "Revisar"; }
@@ -371,6 +397,7 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
 document.getElementById("btn-logout").addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, async (user) => {
+  editorAcuerdos.reset();
   firestoreAccess.reset();resetRecordPages();preparationCursors.clear();for(const choices of studentChoices.values())choices.clear();document.querySelectorAll('datalist[id$="-resultados"]').forEach(el=>el.replaceChildren()); cacheAlumnos=[];cacheLugares=[];ultimaSincronizacion=0;
   if (user) {
     let perfil = { nombre: user.email, rol: "sin_perfil" };
@@ -404,6 +431,13 @@ onAuthStateChanged(auth, async (user) => {
     }
   } else {
     usuarioActual = null;
+    const revision = document.getElementById("revision-contabilidad-horas");
+    revision.open = false;
+    revision.querySelector("#revision-contabilidad-cantidad").textContent = "";
+    revision.querySelector("#revision-contabilidad-estado").textContent = "";
+    const casosRevision = revision.querySelector("#revision-contabilidad-casos");
+    casosRevision.replaceChildren();
+    casosRevision.onclick = null;
     cacheAlumnos = []; cacheLugares = [];
     ultimosAlumnosFiltrados = []; ultimasPracticasFiltradas = [];
     ultimasFilasEstadisticas = []; ultimosResumenPracticas = [];
@@ -645,6 +679,11 @@ window.editarAlumno = async (id) => {
   document.getElementById("alumno-apellido").value = a.apellido;
   document.getElementById("alumno-email").value = a.email || "";
   document.getElementById("alumno-telefono").value = a.telefono || "";
+  document.getElementById("alumno-dni").value = a.dni || "";
+  document.getElementById("alumno-domicilio").value = a.domicilio || a.direccion || "";
+  document.getElementById("alumno-tutor-familiar").value = a.tutorFamiliar || "";
+  document.getElementById("alumno-dni-tutor").value = a.dniTutor || "";
+  document.getElementById("alumno-domicilio-tutor").value = a.domicilioTutor || "";
   document.getElementById("alumno-sector").value = a.sector || "";
   document.getElementById("alumno-curso").value = a.curso || "";
   document.getElementById("modal-alumno-titulo").textContent = `Ficha de ${nombreCompleto(a)}`;
@@ -691,6 +730,8 @@ document.getElementById("form-alumno").addEventListener("submit", async (e) => {
     apellido: document.getElementById("alumno-apellido").value.trim(),
     email: document.getElementById("alumno-email").value.trim(),
     telefono: document.getElementById("alumno-telefono").value.trim(),
+    dni: valueOf("alumno-dni"), domicilio: valueOf("alumno-domicilio"),
+    tutorFamiliar: valueOf("alumno-tutor-familiar"), dniTutor: valueOf("alumno-dni-tutor"), domicilioTutor: valueOf("alumno-domicilio-tutor"),
     sector: document.getElementById("alumno-sector").value.trim(),
     curso: document.getElementById("alumno-curso").value.trim(),
   };
@@ -762,7 +803,7 @@ async function cargarPracticas(move=0) {
       <td>${fmtRangoFechas(p)}</td><td>${p.alumno ? nombreCompleto(p.alumno) : "-"}</td>
       <td>${escaparHTML(p.lugar)}</td>
       <td>${badgeTipo(p.tipo)}</td>
-      <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${etiquetaEstado(p)}</span>${p.duplicadaDe||p.jornadasDuplicadas?`<div class="small text-warning">Duplicación detectada: consultar horas y revisar Estadísticas.</div>`:""}</td>
+      <td><span class="badge bg-${practicaRealizada(p) ? "success" : estadoPractica(p) === "en_curso" ? "primary" : estadoPractica(p) === "cancelada" ? "danger" : "secondary"}">${etiquetaEstado(p)}</span>${accountingExcluded(p)?'<div class="small text-warning">Excluida del cómputo de horas.</div>':p.duplicadaDe||p.jornadasDuplicadas?`<div class="small text-warning">Duplicación detectada: consultar horas y revisar Estadísticas.</div>`:""}</td>
       <td>${escaparHTML(p.sector || "")}</td>
       <td>${p.horaInicio || ""} - ${p.horaFin || ""}</td>
       <td>
@@ -917,6 +958,7 @@ window.editarPractica = async (id, desdeFicha = false) => {
   // Ojo: antes esto forzaba "interna" para cualquier tipo que no fuera "externa",
   // así que al editar una práctica interescolar y guardar, se perdía el tipo.
   document.getElementById("practica-tipo").value = p.tipo || "interna";
+  document.getElementById("practica-domicilio-lugar").value = p.domicilioLugar || p.direccionLugar || "";
   document.getElementById("practica-sector").value = p.sector || "";
   document.getElementById("practica-fecha").value = p.fecha || "";
   document.getElementById("practica-fecha-fin").value = p.fechaFin || "";
@@ -972,6 +1014,7 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
   if(!Number.isFinite(horasPorDia)||horasPorDia<=0||horasPorDia>24) {mostrarAlerta("Indicá horas por día mayores a cero y no superiores a 24.","warning");return;}
   if(duration(entrada,salida)!==null&&horasPorDia>duration(entrada,salida)){mostrarAlerta("Las horas diarias superan el horario indicado.","warning");return;}
   const datos = {
+    domicilioLugar: valueOf("practica-domicilio-lugar"),
     modoHoras, acuerdoNombre:document.getElementById("practica-acuerdo-nombre").value.trim(),
     alumnoId: alumnosSeleccionados[0],
     lugar: document.getElementById("practica-lugar").value.trim(),
@@ -1014,6 +1057,8 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
   if (practicaOrigenAlumnoId) {
     await cargarPracticasDeAlumnoEnFicha(practicaOrigenAlumnoId);
     abrirModal("modal-alumno");
+  } else if (document.getElementById("vista-estadisticas").classList.contains("activa")) {
+    await cargarEstadisticas({ sincronizar: false });
   } else {
     cargarPracticas();
   }
@@ -1735,6 +1780,10 @@ async function obtenerConfigNotificaciones() {
 
 async function cargarNotificaciones() {
   actualizarAlertaConfigNotif();
+  if (!document.getElementById("acuerdos-desde").value) {
+    document.getElementById("acuerdos-desde").value = hoyISO();
+    document.getElementById("acuerdos-hasta").value = sumarDiasISO(hoyISO(), 30);
+  }
   const config = await obtenerConfigNotificaciones();
   document.getElementById("notif-dias").value = config.diasAviso;
   document.getElementById("notif-cc-config").value = config.ccEmail || "";
@@ -2134,23 +2183,148 @@ document.getElementById("btn-estad-guardar-objetivo")?.addEventListener("click",
   }
 });
 
-function mostrarRevisionContabilidad(practicas){
- const table=document.getElementById('tabla-estadisticas')?.closest('table');if(!table)return;
- let notice=document.getElementById('revision-contabilidad-horas');if(!notice){notice=document.createElement('div');notice.id='revision-contabilidad-horas';notice.className='alert alert-warning';table.insertAdjacentElement('beforebegin',notice);}
- const rows=practicas.filter(p=>p.duplicadaDe||p.jornadasDuplicadas||p.posiblesSolapamientos?.length);
- notice.replaceChildren();notice.hidden=!rows.length;if(!rows.length)return;
- const title=document.createElement('strong');title.textContent='Revisión de contabilidad: las jornadas equivalentes se cuentan una sola vez. Los demás solapamientos requieren revisión.';notice.append(title);
- const list=document.createElement('ul');for(const p of rows){const item=document.createElement('li');item.textContent=`${cacheAlumnos.find(a=>a.id===p.alumnoId)?nombreCompleto(cacheAlumnos.find(a=>a.id===p.alumnoId)):p.alumnoId} · ${p.lugar||''} · ${fmtRangoFechas(p)} · registro ${p.id}: ${p.duplicadaDe?'excluido por duplicado de '+p.duplicadaDe:p.jornadasDuplicadas?p.jornadasDuplicadas+' jornadas repetidas excluidas':'revisar coincidencias con '+p.posiblesSolapamientos.join(', ')}. Horas acreditadas: ${num(p.horasRealizadas).toFixed(2)}.`;list.append(item);}notice.append(list);
+function mostrarRevisionContabilidad(practicas, alumnos) {
+  const panel = document.getElementById("revision-contabilidad-horas");
+  const casos = panel.querySelector("#revision-contabilidad-casos");
+  const porId = new Map(practicas.map(p => [p.id, p]));
+  const nombres = new Map(alumnos.map(a => [a.id, nombreCompleto(a)]));
+  const grupos = new Map();
+  const grupoDe = p => {
+    if (!grupos.has(p.alumnoId)) grupos.set(p.alumnoId, { registros: new Map(), cruces: [] });
+    return grupos.get(p.alumnoId);
+  };
+  const estadoRevision = p => p.duplicadaDe || p.jornadasDuplicadas || accountingExcluded(p);
+  let pendientes = 0;
+  for (const p of practicas) {
+    if (estadoRevision(p)) {
+      const grupo = grupoDe(p);
+      grupo.registros.set(p.id, p);
+      const equivalente = porId.get(p.duplicadaDe);
+      if (equivalente) grupo.registros.set(equivalente.id, equivalente);
+    }
+    for (const id of p.posiblesSolapamientos || []) {
+      const q = porId.get(id);
+      if (!q || p.id >= q.id || equivalentOverlap(p, q)) continue;
+      const grupo = grupoDe(p);
+      const decision = overlapDecision(p, q);
+      grupo.registros.set(p.id, p);
+      grupo.registros.set(q.id, q);
+      grupo.cruces.push({ p, q, decision });
+      if (!decision) pendientes++;
+    }
+  }
+  const etiquetaPendientes = n => n === 1 ? "1 cruce pendiente" : `${n} cruces pendientes`;
+  panel.querySelector("#revision-contabilidad-cantidad").textContent = etiquetaPendientes(pendientes);
+  const abiertos = new Set([...casos.querySelectorAll("details[open]")].map(d => d.dataset.alumno));
+  casos.replaceChildren();
+  const nombre = id => nombres.get(id) || id;
+  const boton = (accion, p, etiqueta, q) =>
+    `<button type="button" class="btn btn-sm btn-outline-secondary" data-revision="${accion}" data-id="${escaparHTML(p.id)}" data-par="${escaparHTML(q?.id)}">${etiqueta}</button>`;
+  for (const [id, grupo] of [...grupos].sort(([a], [b]) => nombre(a).localeCompare(nombre(b), "es"))) {
+    const filas = [...grupo.registros.values()].sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || a.id.localeCompare(b.id));
+    const indices = new Map(filas.map((p, i) => [p.id, i + 1]));
+    const casosPendientes = grupo.cruces.filter(c => !c.decision);
+    const pendientesIds = new Set(casosPendientes.flatMap(({p,q}) => [p.id,q.id]));
+    const tabla = filas.map((p, i) => {
+      const excluida = accountingExcluded(p);
+      const nota = excluida ? `Excluido · ${p.exclusionContable.motivo}`
+        : p.duplicadaDe ? `Equivalente a ${p.duplicadaDe}`
+        : p.jornadasDuplicadas ? `${p.jornadasDuplicadas} jornadas equivalentes descontadas` : "";
+      const acciones = excluida ? boton("restaurar", p, "Restaurar cómputo")
+        : [boton("editar", p, "Editar"), pendientesIds.has(p.id) && manualHours(p) && p.horasRealizadas > 0 ? boton("excluir", p, "Excluir horas") : ""].join(" ");
+      return `<tr><th scope="row">${i + 1}</th><td>${escaparHTML(fmtRangoFechas(p))}<br><small>${escaparHTML(p.id)}</small></td>
+        <td>${escaparHTML(p.lugar)}<br><small>${escaparHTML(infoTipo(p.tipo).label)} · ${escaparHTML(p.sector || "Sin sector")}</small></td>
+        <td>${escaparHTML([p.horaInicio,p.horaFin].filter(Boolean).join(" – ") || "Sin horario")}</td>
+        <td>${manualHours(p) ? num(p.horasTotales).toFixed(2) : "Por jornadas"}</td><td>${horasCumplidas(p).toFixed(2)}</td>
+        <td>${acciones}${nota ? `<div class="small mt-1">${escaparHTML(nota)}</div>` : ""}</td></tr>`;
+    }).join("");
+    const cruces = grupo.cruces.map(({p,q,decision}) =>
+      `<li class="mb-1">Registros ${indices.get(p.id)} y ${indices.get(q.id)} · ${decision ? `Distintas · ${escaparHTML(decision.motivo)}` : "Pendiente"} ${decision ? boton("reabrir",p,"Reabrir cruce",q) : boton("confirmar",p,"Confirmar prácticas distintas",q)}</li>`
+    ).join("");
+    const detalle = document.createElement("details");
+    detalle.className = "border rounded p-2 mb-2";
+    detalle.dataset.alumno = id;
+    detalle.open = abiertos.has(id);
+    detalle.innerHTML = `<summary><strong>${escaparHTML(nombre(id))}</strong> · ${filas.length} registros · ${etiquetaPendientes(casosPendientes.length)}</summary>
+      <div class="table-responsive mt-2"><table class="table table-sm mb-2">
+        <thead><tr><th scope="col">N.º</th><th scope="col">Período y registro</th><th scope="col">Lugar y tipo</th><th scope="col">Horario</th><th scope="col">Horas cargadas</th><th scope="col">Horas acreditadas</th><th scope="col">Acciones</th></tr></thead>
+        <tbody>${tabla}</tbody></table></div>${cruces ? `<ul class="small mb-1">${cruces}</ul>` : ""}`;
+    casos.append(detalle);
+  }
+  if (!grupos.size) casos.textContent = "No se encontraron solapamientos ni exclusiones.";
+  casos.onclick = async event => {
+    const control = event.target.closest("button[data-revision]");
+    if (!control || panel.dataset.guardando || !["admin", "tutor"].includes(usuarioActual?.rol)) return;
+    const p = porId.get(control.dataset.id), q = porId.get(control.dataset.par);
+    const accion = control.dataset.revision;
+    const estado = panel.querySelector("#revision-contabilidad-estado");
+    panel.dataset.guardando = "1";
+    try {
+      if (accion === "editar") {
+        await window.editarPractica(p.id);
+        return;
+      }
+      const pregunta = accion === "excluir"
+        ? `Este registro dejará de acreditar horas. Si existe una copia equivalente, el sistema podrá acreditar esa copia. El historial se conserva. Indicá por qué corresponde excluirlo (${p.id}).`
+        : "Indicá qué documentación confirma que son prácticas distintas. Las horas acreditadas seguirán contando.";
+      const motivo = ["excluir", "confirmar"].includes(accion) ? prompt(pregunta)?.trim().slice(0, 500) : "";
+      if (["excluir", "confirmar"].includes(accion) && !motivo) return;
+      if (accion === "restaurar" && !confirm("¿Restaurar el cómputo de este registro y volver a revisar sus coincidencias?")) return;
+      estado.textContent = "Guardando la revisión…";
+      await guardarRevisionContable(p, q, accion, motivo);
+      estado.textContent = "Revisión guardada. Actualizando el cálculo…";
+      await cargarEstadisticas({ sincronizar: false });
+      estado.textContent = "Revisión guardada y estadísticas recalculadas.";
+    } catch (err) {
+      estado.textContent = firestoreMessage(err);
+    } finally {
+      delete panel.dataset.guardando;
+    }
+  };
 }
 
-async function cargarEstadisticas() {
+async function guardarRevisionContable(p, q, accion, motivo) {
+  const responsable = usuarioActual.uid;
+  const fecha = new Date().toISOString();
+  const validar = (snap, anterior) => {
+    const actual = snap.exists() && rowData(snap);
+    if (!actual || actual.archivada || actual.estado === "cancelada"
+      || practiceAccountingKey(actual) !== practiceAccountingKey(anterior)
+      || JSON.stringify(actual.exclusionContable) !== JSON.stringify(anterior.exclusionContable)) {
+      throw new Error("El registro cambió. Actualizá las estadísticas y volvé a revisar.");
+    }
+    return actual;
+  };
+  await runTransaction(db, async tx => {
+    const ref = doc(db, "practicas", p.id);
+    const actual = validar(await tx.get(ref), p);
+    if (!q) {
+      if (!manualHours(actual)) throw new Error("Solo se pueden excluir totales manuales. Corregí las prácticas por jornadas desde Editar.");
+      tx.update(ref, { exclusionContable: { activa: accion === "excluir", clave: practiceAccountingKey(actual), motivo: motivo || actual.exclusionContable?.motivo || "", responsable, fecha } });
+      return;
+    }
+    const otro = validar(await tx.get(doc(db, "practicas", q.id)), q);
+    if (equivalentOverlap(actual, otro) || !accountingOverlaps(actual, [otro]).includes(otro.id)
+      || JSON.stringify(overlapDecision(actual, otro)) !== JSON.stringify(overlapDecision(p, q))) {
+      throw new Error("El cruce cambió. Actualizá las estadísticas y volvé a revisar.");
+    }
+    const decisiones = { ...actual.crucesConfirmados };
+    if (accion === "reabrir") delete decisiones[q.id];
+    else Object.defineProperty(decisiones, q.id, { enumerable: true, value: {
+      primera: practiceAccountingKey(actual), segunda: practiceAccountingKey(otro), motivo, responsable, fecha,
+    } });
+    tx.update(ref, { crucesConfirmados: decisiones });
+  });
+}
+
+async function cargarEstadisticas({ sincronizar = true } = {}) {
   firestoreAccess.clear();
-  await sincronizarAsistenciasAutomaticas(true);
+  if (sincronizar) await sincronizarAsistenciasAutomaticas(true);
   await cargarObjetivoHoras();
   const alumnos = await obtenerAlumnos(true);
   const snap = await getDocs(collection(db, "practicas"));
   const practicas = await enriquecerPracticas(snap.docs.map(d=>({id:d.id,...d.data()})));
-  mostrarRevisionContabilidad(practicas);
+  mostrarRevisionContabilidad(practicas, alumnos);
 
   const porAlumno = {};
   alumnos.forEach(a => {
@@ -3102,7 +3276,7 @@ async function prepareSearchPage(){
 function actionButton(id,fn){document.getElementById(id)?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;try{await fn();}catch(err){mostrarAlerta(firestoreMessage(err),'danger');}finally{button.disabled=false;}});}
 function initializeRemoteLists(){
  for(const id of ['f-lugar','if-lugar','asist-filtro-lugar']){const input=document.getElementById(id);input?.setAttribute('list','lugares-list');input?.addEventListener('focus',async()=>{try{await obtenerLugares();poblarDatalistLugares();}catch(err){mostrarAlerta(firestoreMessage(err),'warning');}});}
- for(const id of ['f-alumno','if-alumno','asist-filtro-alumno','falta-filtro-alumno','asist-alumno','usuario-alumno-id'])attachStudentSearch(id);
+ for(const id of ['acuerdos-alumno','f-alumno','if-alumno','asist-filtro-alumno','falta-filtro-alumno','asist-alumno','usuario-alumno-id'])attachStudentSearch(id);
  document.getElementById('alumno-buscar-campo')?.addEventListener('change',()=>cargarAlumnos());
  document.getElementById('usuarios-filtro-texto')?.addEventListener('input',delayed(cargarUsuarios));document.getElementById('usuarios-filtro-rol')?.addEventListener('change',()=>cargarUsuarios());
  for(const id of ['asist-filtro-desde','asist-filtro-hasta','asist-filtro-tipo','asist-filtro-estado'])document.getElementById(id)?.addEventListener('change',()=>cargarAsistencia());
