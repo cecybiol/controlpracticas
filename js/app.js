@@ -1,3 +1,4 @@
+import { initAgreementEditor } from "./agreements-ui.mjs";
 import { firebaseConfig } from "./firebase-config.js";
 import { initApp as initDrive, buscarEnDrive, cargarTodosLosInformes } from "./drive.js";
 
@@ -101,6 +102,31 @@ window.consultarHorasPractica=async(id,alumnoId)=>{
   ultimasPracticasFiltradas=ultimasPracticasFiltradas.map(row=>own.find(p=>p.id===row.id)?{...row,...own.find(p=>p.id===row.id)}:row);return true;
  }catch(err){mostrarAlerta(firestoreMessage(err),'danger');return false;}
 };
+
+const editorAcuerdos = initAgreementEditor({
+  document, tools: window,
+  allowed: () => ["admin", "tutor"].includes(usuarioActual?.rol),
+  studentId: () => document.getElementById("acuerdos-alumno").value,
+  message: firestoreMessage,
+  filenameFor: (student, practice) => {
+    const name = expectedAgreementNames(student, practice)[0] || "acuerdo.pdf";
+    return name.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "-").slice(0, 140) + ".docx";
+  },
+  readPage: async ({ from, to, alumnoId, move }, reload) => {
+    const spec = pageSpec("practicas", { equal: { alumnoId }, to, direction: "desc" });
+    spec.filters.push(["fecha", ">=", from]);
+    const page = await recordsPage("tabla-acuerdos-practicas", spec, move, reload);
+    if (!page) return null;
+    const practices = page.docs.map(rowData).filter(p => !p.archivada && p.estado !== "cancelada");
+    const students = await relatedStudents(practices);
+    return practices.filter(p => students[p.alumnoId] && !students[p.alumnoId].archivado).map(practice => ({ practice, student: students[practice.alumnoId] }));
+  },
+  download: (bytes, name, type) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const link = document.createElement("a"); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
+});
 
 // ---------------------------------------------------------- helpers UI ---
 function mostrarAlerta(mensaje, tipo = "success") {
@@ -371,6 +397,7 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
 document.getElementById("btn-logout").addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, async (user) => {
+  editorAcuerdos.reset();
   firestoreAccess.reset();resetRecordPages();preparationCursors.clear();for(const choices of studentChoices.values())choices.clear();document.querySelectorAll('datalist[id$="-resultados"]').forEach(el=>el.replaceChildren()); cacheAlumnos=[];cacheLugares=[];ultimaSincronizacion=0;
   if (user) {
     let perfil = { nombre: user.email, rol: "sin_perfil" };
@@ -652,6 +679,11 @@ window.editarAlumno = async (id) => {
   document.getElementById("alumno-apellido").value = a.apellido;
   document.getElementById("alumno-email").value = a.email || "";
   document.getElementById("alumno-telefono").value = a.telefono || "";
+  document.getElementById("alumno-dni").value = a.dni || "";
+  document.getElementById("alumno-domicilio").value = a.domicilio || a.direccion || "";
+  document.getElementById("alumno-tutor-familiar").value = a.tutorFamiliar || "";
+  document.getElementById("alumno-dni-tutor").value = a.dniTutor || "";
+  document.getElementById("alumno-domicilio-tutor").value = a.domicilioTutor || "";
   document.getElementById("alumno-sector").value = a.sector || "";
   document.getElementById("alumno-curso").value = a.curso || "";
   document.getElementById("modal-alumno-titulo").textContent = `Ficha de ${nombreCompleto(a)}`;
@@ -698,6 +730,8 @@ document.getElementById("form-alumno").addEventListener("submit", async (e) => {
     apellido: document.getElementById("alumno-apellido").value.trim(),
     email: document.getElementById("alumno-email").value.trim(),
     telefono: document.getElementById("alumno-telefono").value.trim(),
+    dni: valueOf("alumno-dni"), domicilio: valueOf("alumno-domicilio"),
+    tutorFamiliar: valueOf("alumno-tutor-familiar"), dniTutor: valueOf("alumno-dni-tutor"), domicilioTutor: valueOf("alumno-domicilio-tutor"),
     sector: document.getElementById("alumno-sector").value.trim(),
     curso: document.getElementById("alumno-curso").value.trim(),
   };
@@ -924,6 +958,7 @@ window.editarPractica = async (id, desdeFicha = false) => {
   // Ojo: antes esto forzaba "interna" para cualquier tipo que no fuera "externa",
   // así que al editar una práctica interescolar y guardar, se perdía el tipo.
   document.getElementById("practica-tipo").value = p.tipo || "interna";
+  document.getElementById("practica-domicilio-lugar").value = p.domicilioLugar || p.direccionLugar || "";
   document.getElementById("practica-sector").value = p.sector || "";
   document.getElementById("practica-fecha").value = p.fecha || "";
   document.getElementById("practica-fecha-fin").value = p.fechaFin || "";
@@ -979,6 +1014,7 @@ document.getElementById("form-practica").addEventListener("submit", async (e) =>
   if(!Number.isFinite(horasPorDia)||horasPorDia<=0||horasPorDia>24) {mostrarAlerta("Indicá horas por día mayores a cero y no superiores a 24.","warning");return;}
   if(duration(entrada,salida)!==null&&horasPorDia>duration(entrada,salida)){mostrarAlerta("Las horas diarias superan el horario indicado.","warning");return;}
   const datos = {
+    domicilioLugar: valueOf("practica-domicilio-lugar"),
     modoHoras, acuerdoNombre:document.getElementById("practica-acuerdo-nombre").value.trim(),
     alumnoId: alumnosSeleccionados[0],
     lugar: document.getElementById("practica-lugar").value.trim(),
@@ -1744,6 +1780,10 @@ async function obtenerConfigNotificaciones() {
 
 async function cargarNotificaciones() {
   actualizarAlertaConfigNotif();
+  if (!document.getElementById("acuerdos-desde").value) {
+    document.getElementById("acuerdos-desde").value = hoyISO();
+    document.getElementById("acuerdos-hasta").value = sumarDiasISO(hoyISO(), 30);
+  }
   const config = await obtenerConfigNotificaciones();
   document.getElementById("notif-dias").value = config.diasAviso;
   document.getElementById("notif-cc-config").value = config.ccEmail || "";
@@ -3236,7 +3276,7 @@ async function prepareSearchPage(){
 function actionButton(id,fn){document.getElementById(id)?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;try{await fn();}catch(err){mostrarAlerta(firestoreMessage(err),'danger');}finally{button.disabled=false;}});}
 function initializeRemoteLists(){
  for(const id of ['f-lugar','if-lugar','asist-filtro-lugar']){const input=document.getElementById(id);input?.setAttribute('list','lugares-list');input?.addEventListener('focus',async()=>{try{await obtenerLugares();poblarDatalistLugares();}catch(err){mostrarAlerta(firestoreMessage(err),'warning');}});}
- for(const id of ['f-alumno','if-alumno','asist-filtro-alumno','falta-filtro-alumno','asist-alumno','usuario-alumno-id'])attachStudentSearch(id);
+ for(const id of ['acuerdos-alumno','f-alumno','if-alumno','asist-filtro-alumno','falta-filtro-alumno','asist-alumno','usuario-alumno-id'])attachStudentSearch(id);
  document.getElementById('alumno-buscar-campo')?.addEventListener('change',()=>cargarAlumnos());
  document.getElementById('usuarios-filtro-texto')?.addEventListener('input',delayed(cargarUsuarios));document.getElementById('usuarios-filtro-rol')?.addEventListener('change',()=>cargarUsuarios());
  for(const id of ['asist-filtro-desde','asist-filtro-hasta','asist-filtro-tipo','asist-filtro-estado'])document.getElementById(id)?.addEventListener('change',()=>cargarAsistencia());

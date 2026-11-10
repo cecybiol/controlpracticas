@@ -83,5 +83,35 @@ test('Revisión agrupa cruces, guarda decisiones y restaura horas sin borrar el 
  respuestaRevision=null;
  for(const key of ['practicas/revision1','practicas/revision2','informes/revision'])store.delete(key);
 });
+test('Avisos busca prácticas por fecha y conserva la selección al cambiar de consulta',async()=>{
+ await navigate('notificaciones');
+ window.document.getElementById('acuerdos-desde').value='2026-09-01';
+ window.document.getElementById('acuerdos-hasta').value='2026-09-30';
+ const before=readQueries.length;
+ window.document.getElementById('acuerdos-buscar').click();await settle();
+ const table=window.document.getElementById('tabla-acuerdos-practicas');
+ assert.match(table.textContent,/Melissa/);
+ assert.match(table.textContent,/ULP/);
+ assert.ok(readQueries.slice(before).some(q=>q.path==='practicas'&&q.filters?.some(f=>f.limit===20)&&q.filters.some(f=>f.where?.[0]==='fecha'&&f.where?.[1]==='>=')));
+ const check=table.querySelector('input[type=checkbox]');check.checked=true;check.dispatchEvent(new window.Event('change'));
+ window.document.getElementById('acuerdos-desde').value='2027-01-01';
+ window.document.getElementById('acuerdos-hasta').value='2027-01-31';
+ window.document.getElementById('acuerdos-buscar').click();await settle();
+ assert.equal(window.document.querySelectorAll('[data-acuerdo-id]').length,1);
+ window.document.getElementById('acuerdos-limpiar').click();
+ assert.equal(window.document.querySelectorAll('[data-acuerdo-id]').length,0);
+});
+test('Ficha guarda DNI, tutor familiar y domicilios y la práctica conserva su dirección',async()=>{
+ await window.editarAlumno('a');
+ for(const [id,value] of Object.entries({'alumno-dni':'40111222','alumno-domicilio':'Calle A 123','alumno-tutor-familiar':'Gómez Julia','alumno-dni-tutor':'20111222','alumno-domicilio-tutor':'Calle B 456'}))window.document.getElementById(id).value=value;
+ window.document.getElementById('form-alumno').dispatchEvent(new window.Event('submit',{cancelable:true}));await settle();
+ const student=store.get('alumnos/a');
+ assert.equal(student.dni,'40111222');assert.equal(student.tutorFamiliar,'Gómez Julia');assert.equal(student.domicilio,'Calle A 123');assert.equal(student.dniTutor,'20111222');assert.equal(student.domicilioTutor,'Calle B 456');
+ await window.editarPractica('p');
+ window.document.getElementById('practica-domicilio-lugar').value='Calle C 789';
+ window.document.getElementById('form-practica').dispatchEvent(new window.Event('submit',{cancelable:true}));await settle();
+ assert.equal(store.get('practicas/p').domicilioLugar,'Calle C 789');
+ assert.equal(store.get('practicas/p').horasPorDia,5);
+});
 test('Cuota al leer perfil muestra el motivo y no abre sesión sin rol',async()=>{docFailure={code:'resource-exhausted'};await authCb({uid:'admin',email:'tutor@example.com'});assert.match(window.document.getElementById('login-error').textContent,/Firestore alcanzó un límite/);assert.ok(window.document.getElementById('app-shell').classList.contains('d-none'));assert.ok(!window.document.getElementById('login-view').classList.contains('d-none'));docFailure=null;});
 test.after(()=>dom.window.close());
