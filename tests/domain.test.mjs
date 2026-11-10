@@ -26,7 +26,18 @@ test('Fecha institucional no avanza a UTC entre las 21 y 24',()=>assert.equal(cl
 test('Una fecha imposible es rechazada',()=>assert.equal(validDate('2026-02-31'),false));
 test('Parseo de días admite español y tildes',()=>assert.deepEqual(parseDays('lun,mié,viernes'),[1,3,5]));
 test('Salida anterior a entrada se rechaza',()=>assert.equal(duration('13:00','08:00'),null));
-test('Asistencia ambigua sin práctica no suma a dos prácticas',()=>{const p=practice(),q=practice({id:'p2'}),r=record('2026-09-21','presente',{practicaId:undefined,lugar:'ULP',tipo:'externa'});assert.equal(calculatePractice(p,[r],[p,q],now).horasRealizadas,0)});
+test('Asistencia ambigua sin práctica no suma a turnos distintos',()=>{
+ const p=practice(),q=practice({id:'p2',horaInicio:'09:00',horaFin:'14:00'});
+ const r=record('2026-09-21','presente',{practicaId:undefined,lugar:'ULP',tipo:'externa'});
+ assert.equal(calculatePractice(p,[r],[p,q],now).horasRealizadas,0);
+ assert.equal(calculatePractice(q,[r],[p,q],now).horasRealizadas,0);
+});
+test('Asistencia sin práctica se acredita una vez entre jornadas equivalentes',()=>{
+ const p=practice(),q=practice({id:'p2'});
+ const r=record('2026-09-21','presente',{practicaId:undefined,lugar:'ULP',tipo:'externa'});
+ assert.equal(calculatePractice(p,[r],[p,q],now).horasRealizadas,5);
+ assert.equal(calculatePractice(q,[r],[p,q],now).horasRealizadas,0);
+});
 test('Corrección manual prevalece sobre presencia automática duplicada',()=>{const r=[record('2026-09-21'),record('2026-09-21','ausente_injustificado',{id:'legacy',origen:'manual'})];assert.equal(calculatePractice(practice(),r,undefined,now).horasRealizadas,0)});
 test('Dos correcciones contradictorias no duplican horas',()=>{const r=[record('2026-09-21','presente',{origen:'manual'}),record('2026-09-21','ausente_justificado',{id:'other',origen:'manual'})],v=calculatePractice(practice(),r,undefined,now);assert.equal(v.horasRealizadas,0);assert.equal(v.conflictosAsistencia,1)});
 const alumno={nombre:'Melissa Angelina',apellido:'Barbeito',email:'verified@example.test'};

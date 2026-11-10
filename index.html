@@ -222,6 +222,13 @@
         </div>
       </div>
 
+      <details id="revision-contabilidad-horas" class="border rounded p-3 mb-3">
+        <summary class="fw-semibold">Revisión de horas y solapamientos <span id="revision-contabilidad-cantidad" class="badge bg-secondary"></span></summary>
+        <p class="small text-muted mt-3">Calculá las estadísticas para buscar cruces. Las jornadas equivalentes ya se cuentan una sola vez. Compará los demás registros y verificá la documentación antes de resolverlos.</p>
+        <p id="revision-contabilidad-estado" role="status"></p>
+        <div id="revision-contabilidad-casos"></div>
+      </details>
+
       <!-- Objetivo de horas: es el mismo para todos los alumnos del colegio,
            un valor por tipo de práctica. Solo un admin puede modificarlo;
            el resto de la vista lo usa para calcular el % cumplido real. -->

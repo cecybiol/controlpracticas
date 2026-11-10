@@ -16,7 +16,7 @@ const fsMock={queryEqual:(a,b)=>JSON.stringify(a)===JSON.stringify(b),refEqual:(
 
 fsMock.runTransaction=async(_,fn)=>fn({get:fsMock.getDoc,set:(r,d)=>store.set(r.path,d),update:(r,d)=>store.set(r.path,{...store.get(r.path),...d})});
 fsMock.writeBatch=()=>{const ops=[];return {update:(r,d)=>ops.push(()=>fsMock.updateDoc(r,d)),set:(r,d)=>ops.push(()=>fsMock.setDoc(r,d)),commit:async()=>{for(const op of ops)await op();}};};
-let authCb,errors=[],transactionCalls=0;const originalTransaction=fsMock.runTransaction;fsMock.runTransaction=(...args)=>{transactionCalls++;return originalTransaction(...args);};const context=vm.createContext({window,document:window.document,console,MutationObserver:window.MutationObserver,FileReader:window.FileReader,URL,Intl,Date:class extends Date{constructor(...args){super(...(args.length?args:['2026-09-29T17:00:00Z']));}static now(){return new Date('2026-09-29T17:00:00Z').getTime();}},setTimeout,clearTimeout,setInterval:()=>0,confirm:()=>true,prompt:()=>null,bootstrap:{Modal:{getOrCreateInstance:()=>({show(){}}),getInstance:()=>({hide(){}})}},alert:()=>{}});
+let authCb,errors=[],transactionCalls=0,respuestaRevision=null;const originalTransaction=fsMock.runTransaction;fsMock.runTransaction=(...args)=>{transactionCalls++;return originalTransaction(...args);};const context=vm.createContext({window,document:window.document,console,MutationObserver:window.MutationObserver,FileReader:window.FileReader,URL,Intl,Date:class extends Date{constructor(...args){super(...(args.length?args:['2026-09-29T17:00:00Z']));}static now(){return new Date('2026-09-29T17:00:00Z').getTime();}},setTimeout,clearTimeout,setInterval:()=>0,confirm:()=>true,prompt:()=>respuestaRevision,bootstrap:{Modal:{getOrCreateInstance:()=>({show(){}}),getInstance:()=>({hide(){}})}},alert:()=>{}});
 context.bootstrap=context.bootstrap;context.window.bootstrap=context.bootstrap;
 const cache=new Map();const make=(id,exports)=>new vm.SyntheticModule(Object.keys(exports),function(){for(const [k,v]of Object.entries(exports))this.setExport(k,v)},{context,identifier:id});
 async function load(id){if(cache.has(id))return cache.get(id);let mod;
@@ -52,5 +52,36 @@ test('Preparar búsqueda mantiene datos y filtro nombre llega a Firestore',async
 });
 test('Corregir lugar de práctica actualiza filtro de informes sin perder título',async()=>{store.set('informes/cambio_lugar',{practicaId:'p',alumnoId:'a',titulo:'Informe final',lugar:'ULP'});const previous={...store.get('practicas/p')};await app.namespace.guardarPracticaConInformes('p',{...previous,lugar:'Escuela'},previous);assert.equal(store.get('informes/cambio_lugar').lugar,'Escuela');assert.equal(store.get('informes/cambio_lugar').titulo,'Informe final');await app.namespace.guardarPracticaConInformes('p',previous,{...previous,lugar:'Escuela'});store.delete('informes/cambio_lugar');});
 test('Preparar asistencia antigua conserva ausencia y horarios al habilitar filtro de estado',async()=>{store.set('asistencias/legacy_estado',{alumnoId:'a',practicaId:'p',fecha:'2026-09-28',presente:false,horaEntrada:'08:30',horaSalida:'12:00'});await navigate('configuracion');window.document.getElementById('busqueda-preparar-coleccion').value='asistencias';window.document.getElementById('btn-preparar-busqueda').click();await settle();const row=store.get('asistencias/legacy_estado');assert.equal(row.estado,'ausente_injustificado');assert.equal(row.presente,false);assert.equal(row.horaEntrada,'08:30');assert.equal(row.tipo,'externa');store.delete('asistencias/legacy_estado');});
+test('Revisión agrupa cruces, guarda decisiones y restaura horas sin borrar el historial',async()=>{
+ const manual={...store.get('practicas/p'),fecha:'2026-04-10',fechaFin:'2026-04-10',diasSemana:[5],modoHoras:'manual',estado:'realizada',tipo:'interna'};
+ store.set('practicas/revision1',{...manual,horasTotales:11});
+ store.set('practicas/revision2',{...manual,horasTotales:19});
+ store.set('informes/revision',{practicaId:'revision1',alumnoId:'a',titulo:'Informe histórico'});
+ await navigate('estadisticas');
+ window.document.getElementById('btn-estad-actualizar').click();await settle();
+ const panel=window.document.getElementById('revision-contabilidad-horas');
+ const cantidad=()=>panel.querySelector('#revision-contabilidad-cantidad').textContent;
+ const click=async accion=>{panel.querySelector(`[data-revision="${accion}"]`).click();await settle();};
+ assert.equal(cantidad(),'1 cruce pendiente');
+ assert.equal(panel.querySelectorAll('details').length,1);
+ respuestaRevision='Informe cotejado';
+ await click('confirmar');
+ assert.equal(cantidad(),'0 cruces pendientes');
+ assert.match(panel.textContent,/Distintas · Informe cotejado/);
+ await click('reabrir');
+ assert.equal(cantidad(),'1 cruce pendiente');
+ respuestaRevision='Total duplicado';
+ await click('excluir');
+ assert.equal(cantidad(),'0 cruces pendientes');
+ assert.equal(store.get('practicas/revision1').horasTotales,11);
+ assert.equal(store.get('informes/revision').practicaId,'revision1');
+ assert.equal(panel.querySelector('tbody tr').cells[5].textContent,'0.00');
+ await click('restaurar');
+ assert.equal(cantidad(),'1 cruce pendiente');
+ assert.equal(store.get('practicas/revision1').exclusionContable.activa,false);
+ assert.equal(panel.querySelector('tbody tr').cells[5].textContent,'11.00');
+ respuestaRevision=null;
+ for(const key of ['practicas/revision1','practicas/revision2','informes/revision'])store.delete(key);
+});
 test('Cuota al leer perfil muestra el motivo y no abre sesión sin rol',async()=>{docFailure={code:'resource-exhausted'};await authCb({uid:'admin',email:'tutor@example.com'});assert.match(window.document.getElementById('login-error').textContent,/Firestore alcanzó un límite/);assert.ok(window.document.getElementById('app-shell').classList.contains('d-none'));assert.ok(!window.document.getElementById('login-view').classList.contains('d-none'));docFailure=null;});
 test.after(()=>dom.window.close());

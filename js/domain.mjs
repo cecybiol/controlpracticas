@@ -98,7 +98,8 @@ export const accountingType = value => {
 };
 const accountingText = value => normalize(value).replace(/\s+/g,' ');
 const accountingBase = p => [p.alumnoId,accountingType(p.tipo),accountingText(p.lugar),accountingText(p.sector)];
-const activePractice = p => !p.archivada && p.estado!=='cancelada';
+export const accountingExcluded = p => manualHours(p) && p.exclusionContable?.activa === true && p.exclusionContable.clave === practiceAccountingKey(p);
+const activePractice = p => !p.archivada && p.estado!=='cancelada' && !accountingExcluded(p);
 const samePractice = (a,b) => a===b || (!!a.id && a.id===b.id);
 const firstPractice = rows => [...rows].sort((a,b)=>String(a.id||'').localeCompare(String(b.id||''),'en'))[0];
 export function practiceAccountingKey(p) {
@@ -123,10 +124,25 @@ export function accountingOverlaps(p,practices) {
  const dates=new Set(datesFor(p));
  return practices.filter(q=>!samePractice(q,p)&&activePractice(q)&&q.alumnoId===p.alumnoId&&accountingType(q.tipo)===accountingType(p.tipo)&&datesFor(q).some(d=>dates.has(d))&&((manualHours(p)||manualHours(q))||((duration(p.horaInicio,p.horaFin)!==null&&duration(q.horaInicio,q.horaFin)!==null)&&p.horaInicio<q.horaFin&&q.horaInicio<p.horaFin))).map(q=>q.id).filter(Boolean);
 }
+// Las jornadas equivalentes ya se resuelven por identidad contable.
+export function equivalentOverlap(p,q) {
+ if(manualHours(p)&&manualHours(q))return practiceAccountingKey(p)===practiceAccountingKey(q);
+ if(manualHours(p))return !!equivalentManual(q,[p]);
+ if(manualHours(q))return !!equivalentManual(p,[q]);
+ const dates=new Set(datesFor(p));
+ const shared=datesFor(q).find(date=>dates.has(date));
+ return !!shared&&jornadaPeers(p,shared,[q]).length>0;
+}
+export function overlapDecision(p,q) {
+ const [first,second]=p.id<q.id?[p,q]:[q,p];
+ const key=practiceAccountingKey(second);
+ const decision=Object.hasOwn(first.crucesConfirmados||{},second.id)?first.crucesConfirmados[second.id]:null;
+ return decision?.primera===practiceAccountingKey(first)&&decision?.segunda===key?decision:null;
+}
 export function calculatePractice(p,records,practices=[p],now=clock(),scope={}) {
   const dates=datesFor(p),state=calendarState(p,now),planned=round(dates.length*dayHours(p));
   const zero={...p,estadoCalculado:state,horasRealizadas:0,horasPendientes:0,horasPlanificadas:0,jornadasPendientes:0,conflictosAsistencia:0};
-  if(state==='cancelada')return zero;
+  if(state==='cancelada'||accountingExcluded(p))return zero;
   const inside=dates.filter(date=>(!scope.desde||date>=scope.desde)&&(!scope.hasta||date<=scope.hasta));
   const possible=accountingOverlaps(p,practices);
   if(manualHours(p)) {
